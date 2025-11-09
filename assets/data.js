@@ -54,4 +54,6 @@ const spots = [
     name: "Centquatre",
     city: "Paris",
     country: "France",
-    crew: "Akt
+    crew: "Aktuel Force",
+    type: "Training Spot",
+    image:
