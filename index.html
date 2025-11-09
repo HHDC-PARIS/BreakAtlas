@@ -1,62 +1,106 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta charset="UTF-8" />
   <title>BreakAtlas</title>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <link rel="stylesheet" href="css/style.css" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    crossorigin=""
+  />
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <header>
     <h1>BreakAtlas</h1>
-    <div id="auth">
-      <input type="text" id="userName" placeholder="Your name" />
-      <button id="loginBtn">Login</button>
-      <button id="logoutBtn" style="display:none;">Logout</button>
-      <span id="welcomeMsg"></span>
-    </div>
+    <nav>
+      <button id="tabDashboard" class="tab active">Dashboard</button>
+      <button id="tabProfile" class="tab">Profile</button>
+      <button id="tabLeaderboard" class="tab">Leaderboard</button>
+      <button id="tabStory" class="tab">Story Mode</button>
+    </nav>
   </header>
 
-  <section id="controls">
-    <input type="text" id="searchInput" placeholder="Search spots..." />
-    <select id="countryFilter"></select>
-    <select id="cityFilter"></select>
-    <button id="searchBtn">Search</button>
-  </section>
+  <main>
+    <!-- Dashboard -->
+    <section id="dashboard" class="view">
+      <div class="controls">
+        <input type="text" id="searchBar" placeholder="Search spots..." />
+        <button id="resetFilterBtn" style="display:none;">Reset Filter</button>
+        <div id="filterSummary" style="display:none;"></div>
+      </div>
 
-  <section id="map"></section>
-  <section id="cards"></section>
+      <div class="stats">
+        <h3>Stats Overview</h3>
+        <button id="toggleChartBtn">Switch to Pie Chart</button>
+        <canvas id="statsChart" width="500" height="260"></canvas>
+        <div id="chartLegend"></div>
+      </div>
 
-  <section id="addSpot">
-    <h2>Add a New Spot</h2>
-    <input type="text" id="spotName" placeholder="Spot name" />
-    <input type="text" id="spotCity" placeholder="City" />
-    <input type="text" id="spotCountry" placeholder="Country" />
-    <input type="text" id="spotCrew" placeholder="Crew" />
-    <input type="text" id="spotLat" placeholder="Latitude" />
-    <input type="text" id="spotLng" placeholder="Longitude" />
-    <input type="text" id="spotImage" placeholder="Image URL" />
-    <button id="addSpotBtn">Add Spot</button>
-  </section>
+      <div class="map-pane">
+        <div id="mapLayers">
+          <label><input type="checkbox" id="layerFavorites" checked /> Favorites</label>
+          <label><input type="checkbox" id="layerCrews" checked /> Crews</label>
+          <label><input type="checkbox" id="layerCountries" checked /> Countries</label>
+          <label><input type="checkbox" id="layerCities" checked /> Cities</label>
+        </div>
+        <div id="map"></div>
+      </div>
 
-  <div id="modal" class="modal">
-    <div class="modal-content">
-      <button id="closeModal">Close</button>
-      <h2 id="modalTitle"></h2>
-      <p id="modalAbout"></p>
-      <p><strong>Location:</strong> <span id="modalLocation"></span></p>
-      <p><strong>Schedule:</strong></p>
-      <ul id="modalSchedule"></ul>
-      <p><strong>Contacts:</strong></p>
-      <ul id="modalContacts"></ul>
-      <div id="modalGallery"></div>
-    </div>
-  </div>
+      <section id="cards"></section>
+    </section>
 
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="js/data.js"></script>
-  <script src="js/app.js"></script>
+    <!-- Profile -->
+    <section id="profile" class="view" style="display:none;">
+      <h2>Profile</h2>
+      <img id="profileAvatar" src="" alt="Avatar" />
+      <input type="file" id="avatarUpload" />
+      <input type="color" id="themeColorPicker" />
+
+      <h3>Favorites</h3>
+      <ul id="profileFavorites"></ul>
+
+      <h3>Collections</h3>
+      <div id="profileCollections"></div>
+      <input type="text" id="newCollectionName" placeholder="New collection name" />
+      <button id="createCollectionBtn">Create Collection</button>
+
+      <h3>Achievements</h3>
+      <div id="profileAchievements" class="achievements"></div>
+      <div id="achievementProgress"></div>
+
+      <h3>Activity Feed</h3>
+      <ul id="profileActivity"></ul>
+
+      <h3>Global Stats Dashboard</h3>
+      <div id="globalStats"></div>
+
+      <h3>User Challenges</h3>
+      <div id="challenges"></div>
+    </section>
+
+    <!-- Leaderboard -->
+    <section id="leaderboardView" class="view" style="display:none;">
+      <h2>Community Leaderboard</h2>
+      <div id="leaderboard"></div>
+
+      <h3>Hall of Fame</h3>
+      <div id="hallOfFame"></div>
+    </section>
+
+    <!-- Story Mode -->
+    <section id="storyMode" class="view" style="display:none;">
+      <h2>Story Mode</h2>
+      <div id="storySlides"></div>
+      <button id="prevSlide">Previous</button>
+      <button id="nextSlide">Next</button>
+      <button id="exitStory">Exit Story Mode</button>
+    </section>
+  </main>
+
+  <script src="data.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <script src="app.js"></script>
 </body>
 </html>

@@ -1,4 +1,4 @@
-// data.js — BreakAtlas spot data
+// spots.js
 
 const spots = [
     {
@@ -95,4 +95,50 @@ const spots = [
       lng: 13.45,
       about: "Alternative district with punk-inspired graffiti and murals.",
       reviews: [
-        { rating:
+        { rating: 4, text: "Grungy and authentic." },
+        { rating: 5, text: "Loved the energy!" }
+      ]
+    },
+    {
+      name: "Bushwick Collective",
+      city: "New York",
+      country: "USA",
+      crew: "Crew G",
+      image: "https://picsum.photos/seed/bushwick/600/400",
+      lat: 40.7,
+      lng: -73.9,
+      about: "Curated street art project with global artists.",
+      reviews: [
+        { rating: 5, text: "Incredible talent on display." },
+        { rating: 4, text: "Great walking tour." }
+      ]
+    },
+    {
+      name: "Ximending",
+      city: "Taipei",
+      country: "Taiwan",
+      crew: "Crew H",
+      image: "https://picsum.photos/seed/ximending/600/400",
+      lat: 25.04,
+      lng: 121.51,
+      about: "Youth district with anime-inspired graffiti and pop culture murals.",
+      reviews: [
+        { rating: 4, text: "Fun and colorful." },
+        { rating: 3, text: "Very busy but cool art." }
+      ]
+    },
+    {
+      name: "Valparaíso Hills",
+      city: "Valparaíso",
+      country: "Chile",
+      crew: "Crew I",
+      image: "https://picsum.photos/seed/valparaiso/600/400",
+      lat: -33.05,
+      lng: -71.62,
+      about: "Steep hills covered in murals and poetic graffiti.",
+      reviews: [
+        { rating: 5, text: "Breathtaking views and art." },
+        { rating: 4, text: "A visual feast." }
+      ]
+    }
+  ];
