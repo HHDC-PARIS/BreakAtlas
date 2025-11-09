@@ -86,13 +86,19 @@ const spots = [
       ]
     },
     {
-      name: "Friedrichshain",
-      city: "Berlin",
-      country: "Germany",
-      crew: "Crew A",
-      image: "https://picsum.photos/seed/friedrichshain/600/400",
-      lat: 52.51,
-      lng: 13.45,
-      about: "Alternative district with punk-inspired graffiti and murals.",
+      name: "Bushwick Collective",
+      city: "New York",
+      country: "USA",
+      crew: "Crew G",
+      image: "https://picsum.photos/seed/bushwick/600/400",
+      lat: 40.7,
+      lng: -73.9,
+      about: "Curated street art project with global artists.",
       reviews: [
-        { rating:
+        { rating: 5, text: "Incredible talent on display." },
+        { rating: 4, text: "Great walking tour." }
+      ]
+    },
+    {
+      name: "Ximending",
+      city:

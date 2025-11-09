@@ -6,7 +6,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <link rel="stylesheet" href="./style.css" />
+  <!-- Local CSS in subfolder -->
+  <link rel="stylesheet" href="./assets/style.css" />
 </head>
 <body>
   <header>
@@ -51,48 +52,30 @@
     <!-- Profile -->
     <section id="profile" class="view" style="display:none;">
       <h2>Profile</h2>
-      <div class="profile-header">
-        <img id="profileAvatar" src="" alt="Avatar" />
-        <div class="profile-controls">
-          <label class="inline">
-            <span>Upload avatar</span>
-            <input type="file" id="avatarUpload" accept="image/*" />
-          </label>
-          <label class="inline">
-            <span>Theme color</span>
-            <input type="color" id="themeColorPicker" />
-          </label>
-        </div>
-      </div>
+      <img id="profileAvatar" src="" alt="Avatar" />
+      <input type="file" id="avatarUpload" />
+      <input type="color" id="themeColorPicker" />
 
-      <div class="profile-columns">
-        <div class="col">
-          <h3>Favorites</h3>
-          <ul id="profileFavorites"></ul>
+      <h3>Favorites</h3>
+      <ul id="profileFavorites"></ul>
 
-          <h3>Collections</h3>
-          <div id="profileCollections"></div>
-          <div class="collection-form">
-            <input type="text" id="newCollectionName" placeholder="New collection name" />
-            <button id="createCollectionBtn">Create Collection</button>
-          </div>
+      <h3>Collections</h3>
+      <div id="profileCollections"></div>
+      <input type="text" id="newCollectionName" placeholder="New collection name" />
+      <button id="createCollectionBtn">Create Collection</button>
 
-          <h3>Achievements</h3>
-          <div id="profileAchievements" class="achievements"></div>
-          <div id="achievementProgress"></div>
+      <h3>Achievements</h3>
+      <div id="profileAchievements" class="achievements"></div>
+      <div id="achievementProgress"></div>
 
-          <h3>Activity Feed</h3>
-          <ul id="profileActivity"></ul>
-        </div>
+      <h3>Activity Feed</h3>
+      <ul id="profileActivity"></ul>
 
-        <div class="col">
-          <h3>Global Stats Dashboard</h3>
-          <div id="globalStats"></div>
+      <h3>Global Stats Dashboard</h3>
+      <div id="globalStats"></div>
 
-          <h3>User Challenges</h3>
-          <div id="challenges"></div>
-        </div>
-      </div>
+      <h3>User Challenges</h3>
+      <div id="challenges"></div>
     </section>
 
     <!-- Leaderboard -->
@@ -107,23 +90,18 @@
     <!-- Story Mode -->
     <section id="storyMode" class="view" style="display:none;">
       <h2>Story Mode</h2>
-      <p class="muted">View your spots as a slideshow with map focus.</p>
       <div id="storySlides"></div>
-      <div class="story-controls">
-        <button id="prevSlide">Previous</button>
-        <button id="nextSlide">Next</button>
-        <button id="exitStory">Exit Story Mode</button>
-      </div>
+      <button id="prevSlide">Previous</button>
+      <button id="nextSlide">Next</button>
+      <button id="exitStory">Exit Story Mode</button>
     </section>
   </main>
 
   <!-- Data must load BEFORE app.js -->
-  <script src="./data.js"></script>
-
+  <script src="./assets/data.js"></script>
   <!-- Leaflet JS -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-
   <!-- App logic -->
-  <script src="./app.js"></script>
+  <script src="./assets/app.js"></script>
 </body>
 </html>
