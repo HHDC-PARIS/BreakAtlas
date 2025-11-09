@@ -1,147 +1,86 @@
-/* Global layout and theme */
+/* Base styling */
 body {
-  font-family: "Segoe UI", Arial, sans-serif;
-  background: #0f1115;
-  color: #e9eef5;
-  margin: 0;
+  font-family: 'Inter', sans-serif;
 }
 
-/* Header and navigation */
-.header {
-  background: #141821;
-  padding: 12px 20px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-.logo { margin: 0; font-size: 20px; }
-
-/* Responsive navbar */
-.navbar { display: flex; align-items: center; }
-.hamburger {
-  font-size: 22px;
-  background: none;
-  border: none;
-  color: #e9eef5;
-  cursor: pointer;
-}
-.nav-links {
-  display: none; /* hidden by default, toggled with .show */
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
-.nav-links.show { display: block; }
-.nav-links li { margin: 6px 0; }
-.nav-links a { color: #e9eef5; text-decoration: none; }
-
-/* Views and containers */
-.view { padding: 20px; }
-
-/* Cards grid */
-.grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 16px;
+/* Custom accent color variable */
+:root {
+  --accent: #ff9f1c;
+  --accent-hover: #ffb24a;
 }
 
-/* Spot card */
-.card {
-  background: #191c22;
-  border-radius: 12px;
-  padding: 12px;
-  border: 1px solid #242a36;
+/* Leaflet dark mode tiles */
+.leaflet-tile-pane {
+  filter: brightness(0.6) invert(1) contrast(3) hue-rotate(200deg) saturate(0.3) brightness(0.7);
 }
-.card img { width: 100%; border-radius: 10px; }
-.card h3 { margin: 8px 0; }
-.card p { margin: 6px 0; color: #bfc7d5; }
-.card-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-.card-actions button {
-  background: #2a3040;
-  color: #e9eef5;
-  border: none;
+
+.leaflet-popup-content-wrapper, .leaflet-popup-tip {
+    background-color: #1f2937; /* bg-gray-800 */
+    color: #f3f4f6; /* text-gray-100 */
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+}
+.leaflet-popup-content {
+    color: #f3f4f6; /* text-gray-100 */
+}
+.leaflet-popup-close-button {
+    color: #f3f4f6 !important;
+}
+
+/* Custom button styles using accent */
+.btn-primary {
+  background-color: var(--accent);
+  color: #111827; /* dark text */
+  transition: background-color 0.2s ease;
+  font-weight: 600;
   border-radius: 8px;
-  padding: 8px 12px;
-  cursor: pointer;
+  padding: 10px 16px;
 }
-.card-actions button:hover {
-  background: #364057;
+.btn-primary:hover {
+  background-color: var(--accent-hover);
 }
-
-/* Map area */
-#map { height: 420px; border-radius: 12px; border: 1px solid #242a36; }
-.map-pane { margin-top: 16px; }
-#mapLayers {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  margin-bottom: 8px;
-  flex-wrap: wrap;
-}
-
-/* Profile */
-.avatar { width: 70px; height: 70px; border-radius: 50%; border: 2px solid #2a3040; }
-#profileFavorites, #profileActivity { list-style: none; padding-left: 0; }
-#profileFavorites li, #profileActivity li {
-  background: #191c22;
-  border: 1px solid #242a36;
-  margin-bottom: 6px;
-  padding: 8px;
-  border-radius: 10px;
-}
-
-/* Leaderboard and hall of fame */
-#leaderboard, #hallOfFame, #globalStats, #profileCollections, #profileAchievements, #challenges {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 12px;
-}
-.leader-card, .fame-card, .stat-card, .collection-card, .achievement-card, .challenge-card {
-  background: #191c22;
-  border: 1px solid #242a36;
-  border-radius: 10px;
-  padding: 10px;
-}
-
-/* Stats canvas area */
-.stats {
-  background: #191c22;
-  border: 1px solid #242a36;
-  border-radius: 12px;
-  padding: 12px;
-}
-
-/* Share popup */
-.share-popup {
-  position: fixed;
-  bottom: 20px;
-  right: 20px;
-  background: #191c22;
-  border: 1px solid #2a3040;
-  border-radius: 10px;
-  padding: 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  z-index: 9999;
-}
-.share-popup a { color: #ff9f1c; text-decoration: none; }
-.share-popup a:hover { text-decoration: underline; }
-.share-popup .btn-secondary {
-  background: #2a3040;
-  color: #e9eef5;
-  border: none;
+.btn-secondary {
+  background-color: #374151; /* bg-gray-700 */
+  color: #f3f4f6; /* text-gray-100 */
+  transition: background-color 0.2s ease;
+  font-weight: 500;
   border-radius: 8px;
-  padding: 6px 10px;
-  cursor: pointer;
+  padding: 10px 16px;
 }
-.share-popup .btn-secondary:hover { background: #364057; }
+.btn-secondary:hover {
+  background-color: #4b5563; /* bg-gray-600 */
+}
+.btn-danger {
+    background-color: #dc2626; /* bg-red-600 */
+    color: white;
+    transition: background-color 0.2s ease;
+    font-weight: 500;
+    border-radius: 8px;
+    padding: 10px 16px;
+}
+.btn-danger:hover {
+    background-color: #ef4444; /* bg-red-500 */
+}
 
-/* Small adjustments for accessibility */
-button:focus, a:focus { outline: 2px solid #ff9f1c; outline-offset: 2px; }
+/* Utility classes */
+.view {
+  display: none; /* Hidden by default, 'active-view' class shows it */
+}
+.active-view {
+  display: block;
+}
 
-/* Responsive tweaks */
-@media (min-width: 768px) {
-  .nav-links { display: flex; gap: 16px; }
-  .nav-links li { margin: 0; }
+/* Custom scrollbar */
+::-webkit-scrollbar {
+    width: 8px;
+}
+::-webkit-scrollbar-track {
+    background: #1f2937; /* bg-gray-800 */
+}
+::-webkit-scrollbar-thumb {
+    background: #4b5563; /* bg-gray-600 */
+    border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: #6b7280; /* bg-gray-500 */
 }

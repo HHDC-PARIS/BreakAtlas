@@ -1,119 +1,294 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
   <meta charset="UTF-8" />
-  <title>BreakAtlas</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <!-- Leaflet styles -->
+  <title>BreakAtlas 2.0</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <!-- Tailwind CSS (CDN) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Leaflet Maps CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <!-- App styles -->
-  <link rel="stylesheet" href="./assets/style.css" />
+  
+  <!-- Google Fonts (Inter) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- Local Stylesheet -->
+  <link rel="stylesheet" href="style.css">
 </head>
-<body>
+<body class="bg-gray-900 text-gray-100">
+
   <!-- Header and navigation -->
-  <header class="header">
-    <h1 class="logo">BreakAtlas</h1>
-    <nav id="navbar" class="navbar">
+  <header class="bg-gray-800 shadow-md sticky top-0 z-50">
+    <nav class="container mx-auto px-4 py-3 flex justify-between items-center">
+      <h1 class="text-2xl font-bold" style="color: var(--accent);">BreakAtlas</h1>
+
       <!-- Mobile menu toggle -->
-      <button class="hamburger" onclick="toggleMenu()">☰</button>
-      <ul id="navLinks" class="nav-links">
-        <!-- Use javascript:void(0) to avoid URL # fragments -->
-        <li><a href="javascript:void(0)" onclick="showView('dashboard')">Dashboard</a></li>
-        <li><a href="javascript:void(0)" onclick="showView('profile')">Profile</a></li>
-        <li><a href="javascript:void(0)" onclick="showView('leaderboardView')">Leaderboard</a></li>
-        <li><a href="javascript:void(0)" onclick="showView('storyMode')">Story Mode</a></li>
-        <li><a href="javascript:void(0)" onclick="showView('loginView')">Login</a></li>
+      <button id="hamburger" class="md:hidden p-2 rounded-lg hover:bg-gray-700" onclick="toggleMenu()">
+        <i data-lucide="menu" class="w-6 h-6"></i>
+      </button>
+
+      <!-- Navigation Links (Desktop) -->
+      <ul id="navLinks" class="hidden md:flex space-x-4 items-center">
+        <li><a href="javascript:void(0)" class="nav-link" data-view="dashboard"><i data-lucide="layout-dashboard" class="w-4 h-4 mr-1 inline-block"></i>Dashboard</a></li>
+        <li><a href="javascript:void(0)" class="nav-link" data-view="profile"><i data-lucide="user" class="w-4 h-4 mr-1 inline-block"></i>Profile</a></li>
+        <li><a href="javascript:void(0)" class="nav-link" data-view="leaderboardView"><i data-lucide="trophy" class="w-4 h-4 mr-1 inline-block"></i>Leaderboard</a></li>
+        <li><a href="javascript:void(0)" class="nav-link" data-view="storyMode"><i data-lucide="book-open" class="w-4 h-4 mr-1 inline-block"></i>Story Mode</a></li>
+        <li><a href="javascript:void(0)" class="nav-link" data-view="loginView"><i data-lucide="log-in" class="w-4 h-4 mr-1 inline-block"></i>Login</a></li>
       </ul>
     </nav>
+    
+    <!-- Navigation Links (Mobile) -->
+    <div id="mobileMenu" class="hidden md:hidden bg-gray-800 px-4 pb-4 border-t border-gray-700">
+        <ul class="flex flex-col space-y-2">
+            <li><a href="javascript:void(0)" class="nav-link" data-view="dashboard"><i data-lucide="layout-dashboard" class="w-4 h-4 mr-1 inline-block"></i>Dashboard</a></li>
+            <li><a href="javascript:void(0)" class="nav-link" data-view="profile"><i data-lucide="user" class="w-4 h-4 mr-1 inline-block"></i>Profile</a></li>
+            <li><a href="javascript:void(0)" class="nav-link" data-view="leaderboardView"><i data-lucide="trophy" class="w-4 h-4 mr-1 inline-block"></i>Leaderboard</a></li>
+            <li><a href="javascript:void(0)" class="nav-link" data-view="storyMode"><i data-lucide="book-open" class="w-4 h-4 mr-1 inline-block"></i>Story Mode</a></li>
+            <li><a href="javascript:void(0)" class="nav-link" data-view="loginView"><i data-lucide="log-in" class="w-4 h-4 mr-1 inline-block"></i>Login</a></li>
+        </ul>
+    </div>
   </header>
 
-  <main>
-    <!-- Dashboard: search, stats, map, cards -->
-    <section id="dashboard" class="view">
-      <div class="controls">
-        <input type="text" id="searchBar" placeholder="Search jams, cyphers, training spots..." />
-        <button id="resetFilterBtn" style="display:none;">Reset Filter</button>
-        <div id="filterSummary" style="display:none;"></div>
-      </div>
+  <main class="container mx-auto p-4 md:p-6">
+    
+    <!-- User ID Display (for Firestore) -->
+    <div class="mb-2 text-xs text-gray-500">
+      Firebase Status: <span id="authStatus">Initializing...</span> | User ID: <span id="userIdDisplay" class="font-mono">...</span>
+    </div>
 
-      <!-- Simple stats area (canvas rendered with custom JS) -->
-      <div class="stats">
-        <h3>Stats Overview</h3>
-        <button id="toggleChartBtn">Switch to Pie Chart</button>
-        <canvas id="statsChart" width="600" height="280"></canvas>
-        <div id="chartLegend"></div>
-      </div>
-
-      <!-- Map with layer toggles -->
-      <div class="map-pane">
-        <div id="mapLayers">
-          <label><input type="checkbox" id="layerFavorites" checked /> Favorites</label>
-          <label><input type="checkbox" id="layerCrews" checked /> Crews</label>
-          <label><input type="checkbox" id="layerCountries" checked /> Countries</label>
-          <label><input type="checkbox" id="layerCities" checked /> Cities</label>
+    <!-- ===== Dashboard View ===== -->
+    <section id="dashboard" class="view active-view space-y-6">
+      
+      <!-- Search and Controls -->
+      <div class="bg-gray-800 p-4 rounded-lg shadow-lg">
+        <div class="relative">
+          <input type="text" id="searchBar" placeholder="Search jams, cyphers, training spots..." class="w-full bg-gray-700 rounded-lg py-3 px-4 pl-10 text-gray-100 focus:outline-none focus:ring-2" style="--tw-ring-color: var(--accent);">
+          <div class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+            <i data-lucide="search" class="w-5 h-5"></i>
+          </div>
         </div>
-        <div id="map" aria-label="Map of breaking spots"></div>
+        <div id="filterSummary" class="mt-3 text-sm text-gray-400 hidden"></div>
+        <button id="resetFilterBtn" class="btn-secondary mt-3 text-sm py-2 px-3 hidden">
+          <i data-lucide="x" class="w-4 h-4 inline-block mr-1"></i>Reset Filter
+        </button>
       </div>
 
-      <!-- Cards grid -->
-      <section id="cards" class="grid" aria-label="Spot cards grid"></section>
+      <!-- Stats Area -->
+      <div class="stats bg-gray-800 p-4 rounded-lg shadow-lg space-y-3">
+        <div class="flex justify-between items-center">
+            <h3 class="text-xl font-semibold">Stats Overview</h3>
+            <button id="toggleChartBtn" class="btn-secondary text-sm py-2 px-3">
+                <i data-lucide="pie-chart" class="w-4 h-4 inline-block mr-1"></i>Switch to Pie
+            </button>
+        </div>
+        <canvas id="statsChart" class="w-full"></canvas>
+        <div id="chartLegend" class="text-center text-sm text-gray-400 flex flex-wrap justify-center gap-4"></div>
+      </div>
+
+      <!-- Map and Cards Layout -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        
+        <!-- Map Pane (spans 2 columns on large screens) -->
+        <div class="map-pane lg:col-span-2 bg-gray-800 p-4 rounded-lg shadow-lg space-y-4">
+          <div id="mapLayers" class="flex flex-wrap gap-x-4 gap-y-2">
+            <label class="flex items-center space-x-2 cursor-pointer"><input type="checkbox" id="layerJams" class="map-layer-toggle" data-type="jam" checked /> <span>Jams</span></label>
+            <label class="flex items-center space-x-2 cursor-pointer"><input type="checkbox" id="layerCyphers" class="map-layer-toggle" data-type="cypher" checked /> <span>Cyphers</span></label>
+            <label class="flex items-center space-x-2 cursor-pointer"><input type="checkbox" id="layerTraining" class="map-layer-toggle" data-type="training" checked /> <span>Training</span></label>
+            <label class="flex items-center space-x-2 cursor-pointer"><input type="checkbox" id="layerFavorites" class="map-layer-toggle" data-type="favorite" checked /> <span>Favorites</span></label>
+          </div>
+          <div id="map" aria-label="Map of breaking spots" class="h-[500px] w-full rounded-lg bg-gray-700"></div>
+        </div>
+        
+        <!-- Cards Grid (spans 1 column on large screens) -->
+        <section id="cards" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-1 gap-6 lg:max-h-[600px] lg:overflow-y-auto" aria-label="Spot cards grid"></section>
+      
+      </div>
     </section>
 
-    <!-- Profile: avatar, theme, favorites, collections, achievements, activity, global stats, challenges -->
-    <section id="profile" class="view" style="display:none;">
-      <h2>Profile</h2>
-      <img id="profileAvatar" class="avatar" src="" alt="Avatar" />
-      <input type="file" id="avatarUpload" />
-      <input type="color" id="themeColorPicker" />
-      <h3>Favorites</h3>
-      <ul id="profileFavorites"></ul>
-      <h3>Collections</h3>
-      <div id="profileCollections"></div>
-      <input type="text" id="newCollectionName" placeholder="New collection name" />
-      <button id="createCollectionBtn">Create Collection</button>
-      <h3>Achievements</h3>
-      <div id="profileAchievements"></div>
-      <div id="achievementProgress"></div>
-      <h3>Activity Feed</h3>
-      <ul id="profileActivity"></ul>
-      <h3>Global Stats</h3>
-      <div id="globalStats"></div>
-      <h3>User Challenges</h3>
-      <div id="challenges"></div>
+    <!-- ===== Profile View ===== -->
+    <section id="profile" class="view space-y-6">
+      <div class="bg-gray-800 p-6 rounded-lg shadow-lg flex flex-col md:flex-row items-center gap-6">
+        <div class="relative">
+          <img id="profileAvatar" class="avatar w-32 h-32 rounded-full border-4 border-gray-700 object-cover" src="https://placehold.co/128x128/374151/f3f4f6?text=User" alt="Avatar" />
+          <label for="avatarUpload" class="absolute -bottom-2 -right-2 p-2 bg-gray-700 rounded-full cursor-pointer hover:bg-gray-600">
+            <i data-lucide="camera" class="w-5 h-5"></i>
+            <input type="file" id="avatarUpload" class="hidden" accept="image/*" />
+          </label>
+        </div>
+        <div class="flex-1 text-center md:text-left">
+            <h2 class="text-3xl font-bold">Your Profile</h2>
+            <p class="text-gray-400">Customize your atlas and track your journey.</p>
+        </div>
+        <div class="flex flex-col items-center md:items-end gap-2">
+            <label for="themeColorPicker" class="text-sm font-medium">Accent Color</label>
+            <input type="color" id="themeColorPicker" class="w-16 h-10 p-1 bg-gray-700 rounded-lg border border-gray-600 cursor-pointer" />
+        </div>
+      </div>
+
+      <!-- Profile Grid -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- Main Column -->
+        <div class="lg:col-span-2 space-y-6">
+            <!-- Achievements -->
+            <div>
+                <h3 class="text-2xl font-semibold mb-4">Achievements</h3>
+                <div id="profileAchievements" class="grid grid-cols-2 md:grid-cols-3 gap-4"></div>
+                <div id="achievementProgress" class="mt-4 text-gray-400"></div>
+            </div>
+            <!-- Collections -->
+            <div>
+                <h3 class="text-2xl font-semibold mb-4">Your Collections</h3>
+                <div class="flex gap-2 mb-4">
+                    <input type="text" id="newCollectionName" placeholder="New collection name" class="flex-1 bg-gray-700 rounded-lg py-2 px-4 text-gray-100 focus:outline-none focus:ring-2" style="--tw-ring-color: var(--accent);">
+                    <button id="createCollectionBtn" class="btn-primary py-2 px-4"><i data-lucide="plus" class="w-5 h-5"></i></button>
+                </div>
+                <div id="profileCollections" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
+            </div>
+        </div>
+        
+        <!-- Sidebar Column -->
+        <div class="space-y-6">
+            <!-- Favorites -->
+            <div>
+                <h3 class="text-2xl font-semibold mb-4">Favorites</h3>
+                <ul id="profileFavorites" class="space-y-2 max-h-64 overflow-y-auto"></ul>
+            </div>
+            <!-- Activity Feed -->
+            <div>
+                <h3 class="text-2xl font-semibold mb-4">Activity Feed</h3>
+                <ul id="profileActivity" class="space-y-2 text-sm max-h-64 overflow-y-auto"></ul>
+            </div>
+            <!-- Challenges -->
+            <div>
+                <h3 class="text-2xl font-semibold mb-4">User Challenges</h3>
+                <div id="challenges" class="space-y-4"></div>
+            </div>
+        </div>
+      </div>
     </section>
 
-    <!-- Leaderboard + Hall of Fame -->
-    <section id="leaderboardView" class="view" style="display:none;">
-      <h2>Community Leaderboard</h2>
-      <div id="leaderboard"></div>
-      <h3>Hall of Fame</h3>
-      <div id="hallOfFame"></div>
+    <!-- ===== Leaderboard View ===== -->
+    <section id="leaderboardView" class="view space-y-6">
+      <div>
+        <h2 class="text-3xl font-bold mb-4">Community Leaderboard</h2>
+        <p class="text-gray-400 mb-4">See who's exploring the most spots across the map.</p>
+        <div id="leaderboard" class="grid grid-cols-1 md:grid-cols-3 gap-4"></div>
+      </div>
+      <div>
+        <h3 class="text-3xl font-bold mb-4">Hall of Fame</h3>
+        <p class="text-gray-400 mb-4">Legendary crews and iconic jams that shaped the scene.</p>
+        <div id="hallOfFame" class="grid grid-cols-1 md:grid-cols-3 gap-4"></div>
+      </div>
+      <div>
+        <h3 class="text-3xl font-bold mb-4">Global Stats</h3>
+        <p class="text-gray-400 mb-4">The BreakAtlas world at a glance.</p>
+        <div id="globalStats" class="grid grid-cols-2 md:grid-cols-4 gap-4"></div>
+      </div>
     </section>
 
-    <!-- Story mode slideshow -->
-    <section id="storyMode" class="view" style="display:none;">
-      <h2>Story Mode</h2>
-      <div id="storySlides"></div>
-      <button id="prevSlide">Previous</button>
-      <button id="nextSlide">Next</button>
-      <button id="exitStory">Exit Story Mode</button>
+    <!-- ===== Story Mode View ===== -->
+    <section id="storyMode" class="view">
+      <h2 class="text-3xl font-bold mb-4 text-center">Welcome to Your Journey</h2>
+      <p class="text-gray-400 mb-6 text-center max-w-2xl mx-auto">This is BreakAtlas, your guide to the global breaking scene. We'll walk you through the key features to get you started.</p>
+      
+      <div id="storySlides" class="relative w-full max-w-3xl mx-auto bg-gray-800 rounded-lg shadow-xl overflow-hidden" style="min-height: 400px;">
+        <!-- Slides will be injected here by JS -->
+      </div>
+      
+      <div class="flex justify-center items-center mt-6 space-x-4">
+        <button id="prevSlide" class="btn-secondary py-2 px-4"><i data-lucide="arrow-left" class="w-5 h-5 mr-1 inline-block"></i>Previous</button>
+        <div id="storyDots" class="flex space-x-2"></div>
+        <button id="nextSlide" class="btn-primary py-2 px-4">Next<i data-lucide="arrow-right" class="w-5 h-5 ml-1 inline-block"></i></button>
+      </div>
+      <div class="text-center mt-6">
+        <button id="exitStory" class="text-gray-500 hover:text-gray-300 transition-colors">Skip Tutorial</button>
+      </div>
     </section>
 
-    <!-- Simple login -->
-    <section id="loginView" class="view" style="display:none;">
-      <h2>Login</h2>
-      <input type="text" id="username" placeholder="Username" />
-      <input type="password" id="password" placeholder="Password" />
-      <button onclick="login()">Login</button>
+    <!-- ===== Login View ===== -->
+    <section id="loginView" class="view">
+      <div class="max-w-md mx-auto bg-gray-800 p-8 rounded-lg shadow-lg">
+        <h2 class="text-3xl font-bold mb-6 text-center">Login</h2>
+        <p class="text-gray-400 mb-6 text-center">This is a demo login. In a real app, this would use secure authentication.</p>
+        <div class="space-y-4">
+          <input type="text" id="username" placeholder="Username" class="w-full bg-gray-700 rounded-lg py-3 px-4 text-gray-100 focus:outline-none focus:ring-2" style="--tw-ring-color: var(--accent);">
+          <input type="password" id="password" placeholder="Password" class="w-full bg-gray-700 rounded-lg py-3 px-4 text-gray-100 focus:outline-none focus:ring-2" style="--tw-ring-color: var(--accent);">
+          <button onclick="login()" class="btn-primary w-full py-3">Login</button>
+        </div>
+      </div>
     </section>
   </main>
 
-  <!-- Share popup (used when Web Share API unavailable) -->
-  <div id="sharePopup" class="share-popup" style="display:none;"></div>
+  <!-- ===== Modals ===== -->
+  
+  <!-- Add to Collection Modal -->
+  <div id="collectionModal" class="fixed inset-0 bg-black bg-opacity-75 z-50 flex justify-center items-center p-4 hidden">
+    <div class="bg-gray-800 p-6 rounded-lg shadow-xl max-w-lg w-full">
+      <h3 class="text-xl font-semibold mb-4">Add to Collection</h3>
+      <p class="text-gray-300 mb-4">Select a collection or create a new one for <strong id="collectionModalSpotName"></strong>.</p>
+      <div id="collectionModalList" class="space-y-2 max-h-48 overflow-y-auto mb-4">
+        <!-- Collection items will be injected here -->
+      </div>
+      <div class="flex gap-2 mb-4">
+          <input type="text" id="collectionModalNewName" placeholder="New collection name" class="flex-1 bg-gray-700 rounded-lg py-2 px-4 text-gray-100 focus:outline-none focus:ring-2" style="--tw-ring-color: var(--accent);">
+          <button id="collectionModalCreateBtn" class="btn-primary py-2 px-4"><i data-lucide="plus" class="w-5 h-5"></i></button>
+      </div>
+      <div class="flex justify-end space-x-2">
+        <button onclick="closeModal('collectionModal')" class="btn-secondary">Cancel</button>
+      </div>
+    </div>
+  </div>
 
-  <!-- Data first, then Leaflet, then app logic -->
-  <script src="./assets/data.js"></script>
+  <!-- Rename Collection Modal -->
+  <div id="renameModal" class="fixed inset-0 bg-black bg-opacity-75 z-50 flex justify-center items-center p-4 hidden">
+    <div class="bg-gray-800 p-6 rounded-lg shadow-xl max-w-md w-full">
+      <h3 class="text-xl font-semibold mb-4">Rename Collection</h3>
+      <input type="text" id="renameModalInput" class="w-full bg-gray-700 rounded-lg py-2 px-4 text-gray-100 focus:outline-none focus:ring-2" style="--tw-ring-color: var(--accent);">
+      <div class="flex justify-end space-x-2 mt-4">
+        <button onclick="closeModal('renameModal')" class="btn-secondary">Cancel</button>
+        <button id="renameModalSaveBtn" class="btn-primary">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Delete Confirmation Modal -->
+  <div id="deleteModal" class="fixed inset-0 bg-black bg-opacity-75 z-50 flex justify-center items-center p-4 hidden">
+    <div class="bg-gray-800 p-6 rounded-lg shadow-xl max-w-md w-full">
+      <div class="flex items-center space-x-3">
+        <div class="p-2 bg-red-800 rounded-full">
+            <i data-lucide="alert-triangle" class="w-6 h-6 text-red-300"></i>
+        </div>
+        <h3 class="text-xl font-semibold">Delete Collection</h3>
+      </div>
+      <p class="text-gray-300 my-4">Are you sure you want to delete the collection "<strong id="deleteModalCollectionName"></strong>"? This action cannot be undone.</p>
+      <div class="flex justify-end space-x-2 mt-4">
+        <button onclick="closeModal('deleteModal')" class="btn-secondary">Cancel</button>
+        <button id="deleteModalConfirmBtn" class="btn-danger">Delete</button>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- Share Popup (Fallback) -->
+  <div id="sharePopup" class="fixed bottom-6 right-6 bg-gray-800 p-4 rounded-lg shadow-xl z-40 space-y-3 border border-gray-700 hidden">
+    <h4 class="font-semibold text-lg">Share this spot</h4>
+    <div id="sharePopupLinks" class="flex flex-col space-y-2"></div>
+    <button onclick="closeSharePopup()" class="btn-secondary w-full mt-2">Close</button>
+  </div>
+
+
+  <!-- External Scripts -->
+  <!-- Leaflet JS -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="./assets/app.js"></script>
+  <!-- Icons (Lucide) -->
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  
+  <!-- Local App Scripts -->
+  <script src="data.js"></script>
+  <script type="module" src="app.js"></script>
 </body>
 </html>
