@@ -7,38 +7,41 @@
 
   <!-- Tailwind CSS (CDN) -->
   <script src="https://cdn.tailwindcss.com"></script>
-  
-  <!-- Lucide Icons -->
-  <script src="https://unpkg.com/lucide@latest"></script>
 
   <!-- Leaflet Maps CSS -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  
-  <!-- Leaflet Geolocation CSS -->
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet.locatecontrol/dist/L.Control.Locate.min.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
 
-  <!-- Google Fonts (Inter) -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <!-- Lucide Icons (Used for dynamic icons) -->
+  <script src="https://unpkg.com/lucide@latest"></script>
 
   <style>
-    /* Base styling */
+    /* Configure Tailwind to use Inter font and accent color */
+    :root {
+      --accent: #ff9f1c; /* Default Orange */
+      --accent-hover: #ffb24a;
+      --jam-color: #ef4444;   /* Red */
+      --cypher-color: #3b82f6; /* Blue */
+      --training-color: #22c55e; /* Green */
+    }
+    
     body {
       font-family: 'Inter', sans-serif;
     }
 
-    /* Custom accent color variable */
-    :root {
-      --accent: #ff9f1c;
-      --accent-hover: #ffb24a;
-    }
-
-    /* Leaflet dark mode tiles */
+    /* Leaflet Dark Mode Tiles (Filter from a basic light tile layer) */
     .leaflet-tile-pane {
       filter: brightness(0.6) invert(1) contrast(3) hue-rotate(200deg) saturate(0.3) brightness(0.7);
     }
+    
+    #map {
+      height: 60vh; /* Responsive map height */
+      width: 100%;
+      border-radius: 0.75rem; /* rounded-xl */
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1); /* shadow-lg */
+      z-index: 10;
+    }
 
+    /* Leaflet Popup Styling for Dark Mode */
     .leaflet-popup-content-wrapper, .leaflet-popup-tip {
         background-color: #1f2937; /* bg-gray-800 */
         color: #f3f4f6; /* text-gray-100 */
@@ -46,12 +49,13 @@
         box-shadow: 0 4px 12px rgba(0,0,0,0.5);
     }
     .leaflet-popup-content {
-        color: #f3f4f6; /* text-gray-100 */
+        color: #f3f4f6;
+        padding-right: 12px;
     }
     .leaflet-popup-close-button {
         color: #f3f4f6 !important;
+        font-size: 1.2rem;
     }
-
     /* Custom button styles using accent */
     .btn-primary {
       background-color: var(--accent);
@@ -60,6 +64,8 @@
       font-weight: 600;
       border-radius: 8px;
       padding: 10px 16px;
+      box-shadow: 0 4px var(--accent-hover);
+      border-bottom: 3px solid var(--accent-hover);
     }
     .btn-primary:hover {
       background-color: var(--accent-hover);
@@ -84,245 +90,244 @@
         padding: 10px 16px;
     }
     .btn-danger:hover {
-        background-color: #ef4444; /* bg-red-500 */
+        background-color: #b91c1c; /* bg-red-700 */
     }
-    .btn-icon {
-        background: none;
-        border: none;
-        color: #9ca3af; /* text-gray-400 */
-        padding: 4px;
+    .view {
+        min-height: calc(100vh - 80px); /* Ensure views take up space below header */
+    }
+
+    /* Style for the custom radio button toggle */
+    .switch-toggle input[type="radio"] {
+        display: none;
+    }
+    .switch-toggle label {
+        cursor: pointer;
+        padding: 8px 16px;
         border-radius: 6px;
-        transition: color 0.2s ease;
+        transition: all 0.2s;
     }
-    .btn-icon:hover {
-        color: var(--accent);
-    }
-
-    /* Profile list items */
-    .favorite-card {
-      background-color: #1f2937; /* bg-gray-800 */
-      border: 1px solid #374151; /* border-gray-700 */
-      margin-bottom: 8px;
-      padding: 12px;
-      border-radius: 8px;
-    }
-
-    /* Customizing Leaflet locate control for dark mode */
-    .leaflet-control-locate a {
-        background-color: #1f2937 !important;
-        border: 1px solid #374151 !important;
-        color: #f3f4f6 !important;
-        border-radius: 8px !important;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.4) !important;
-    }
-    .leaflet-control-locate a:hover {
-        background-color: #374151 !important;
+    .switch-toggle input[type="radio"]:checked + label {
+        background-color: var(--accent);
+        color: #111827;
+        font-weight: 600;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
     }
   </style>
+
+  <!-- Google Fonts (Inter) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
-<body class="bg-gray-900 text-gray-100">
+<body class="bg-gray-900 text-gray-100 antialiased">
 
   <!-- Header and navigation -->
-  <header class="bg-gray-800 shadow-md sticky top-0 z-50">
-    <nav class="container mx-auto px-4 py-3 flex justify-between items-center">
-      <h1 class="text-2xl font-bold" style="color: var(--accent)">BreakAtlas 2.0</h1>
-      <button class="md:hidden text-2xl text-gray-100" onclick="toggleMenu()">☰</button>
-      <ul id="navLinks" class="hidden md:flex md:space-x-6 absolute md:static top-16 right-0 w-full md:w-auto bg-gray-800 md:bg-transparent p-4 md:p-0 flex-col md:flex-row space-y-2 md:space-y-0 text-lg md:text-base">
-        <li><a href="javascript:void(0)" onclick="showView('dashboard')" class="text-gray-300 hover:text-accent transition duration-150 flex items-center space-x-2"><i data-lucide="layout-dashboard" class="w-5 h-5"></i><span>Dashboard</span></a></li>
-        <li><a href="javascript:void(0)" onclick="showView('profile')" class="text-gray-300 hover:text-accent transition duration-150 flex items-center space-x-2"><i data-lucide="user" class="w-5 h-5"></i><span>Profile</span></a></li>
-        <li><a href="javascript:void(0)" onclick="showView('leaderboardView')" class="text-gray-300 hover:text-accent transition duration-150 flex items-center space-x-2"><i data-lucide="trophy" class="w-5 h-5"></i><span>Ranks</span></a></li>
-        <li><a href="javascript:void(0)" onclick="showView('storyMode')" class="text-gray-300 hover:text-accent transition duration-150 flex items-center space-x-2"><i data-lucide="book-open" class="w-5 h-5"></i><span>Story Mode</span></a></li>
-      </ul>
-    </nav>
+  <header class="bg-gray-800 shadow-xl sticky top-0 z-50">
+    <div class="container mx-auto px-4 py-3 flex justify-between items-center">
+      <h1 class="text-2xl font-extrabold flex items-center" style="color: var(--accent);">
+        <i data-lucide="compass" class="w-6 h-6 mr-2"></i>BreakAtlas
+      </h1>
+      <nav id="navbar" class="navbar">
+        <!-- Desktop Nav -->
+        <ul id="navLinks" class="hidden md:flex space-x-6 text-lg font-medium">
+          <li><a href="javascript:void(0)" onclick="showView('dashboard')" class="hover:text-amber-400 transition-colors">Dashboard</a></li>
+          <li><a href="javascript:void(0)" onclick="showView('profile')" class="hover:text-amber-400 transition-colors">Profile</a></li>
+          <li><a href="javascript:void(0)" onclick="showView('leaderboardView')" class="hover:text-amber-400 transition-colors">Community</a></li>
+          <li><a href="javascript:void(0)" onclick="showView('storyMode')" class="hover:text-amber-400 transition-colors">Story Mode</a></li>
+        </ul>
+        <!-- Mobile Menu Toggle -->
+        <button class="md:hidden text-2xl text-gray-100 hover:text-amber-400 transition-colors" onclick="toggleMenu()">
+          <i data-lucide="menu"></i>
+        </button>
+      </nav>
+    </div>
+    <!-- Mobile Menu Dropdown -->
+    <div id="mobileMenu" class="md:hidden bg-gray-700 py-2 hidden">
+        <ul class="flex flex-col space-y-2 px-4 text-sm">
+            <li><a href="javascript:void(0)" onclick="showView('dashboard')" class="block p-2 hover:bg-gray-600 rounded">Dashboard</a></li>
+            <li><a href="javascript:void(0)" onclick="showView('profile')" class="block p-2 hover:bg-gray-600 rounded">Profile</a></li>
+            <li><a href="javascript:void(0)" onclick="showView('leaderboardView')" class="block p-2 hover:bg-gray-600 rounded">Community</a></li>
+            <li><a href="javascript:void(0)" onclick="showView('storyMode')" class="block p-2 hover:bg-gray-600 rounded">Story Mode</a></li>
+        </ul>
+    </div>
   </header>
 
-  <main class="container mx-auto px-4 py-6">
-
+  <main class="container mx-auto px-4 py-8">
     <!-- Dashboard View -->
-    <section id="dashboard" class="view">
-      <h2 class="text-3xl font-bold mb-6">Find Your Next Spot</h2>
-      
-      <!-- Search and Filters -->
-      <div class="mb-6 flex flex-col md:flex-row gap-4">
-        <input type="text" id="searchInput" placeholder="Search Jams, Cities, Crews..." class="flex-grow p-3 bg-gray-800 border border-gray-700 rounded-xl focus:border-accent focus:ring-accent text-white" />
-        <!-- Filters can be added here -->
+    <section id="dashboard" class="view" style="display:block;">
+      <h2 class="text-3xl font-bold mb-6">Global Scene Hub</h2>
+
+      <!-- Map and Search/Filter -->
+      <div class="bg-gray-800 p-6 rounded-xl shadow-2xl mb-8 border border-gray-700">
+        <div class="flex flex-col sm:flex-row gap-4 mb-4">
+          <input type="text" id="searchInput" oninput="filterSpots()" placeholder="Search by name, city, crew, or type..." class="flex-grow p-3 rounded-lg bg-gray-700 border border-gray-600 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 text-gray-100 placeholder-gray-400"/>
+          <select id="typeFilter" onchange="filterSpots()" class="p-3 rounded-lg bg-gray-700 border border-gray-600 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 text-gray-100">
+            <option value="">All Types</option>
+            <option value="Jam">Jam</option>
+            <option value="Cypher">Cypher</option>
+            <option value="Training">Training Spot</option>
+          </select>
+        </div>
+        <div id="map"></div>
       </div>
 
-      <!-- Map Container -->
-      <div id="map" class="w-full bg-gray-800 rounded-xl shadow-inner mb-8" style="min-height: 400px;"></div>
-
-      <!-- Spot Cards Grid -->
-      <h3 class="text-2xl font-semibold mb-4 border-b border-gray-700 pb-2">All European Spots (${spots.length} Total)</h3>
-      <div id="spotsContainer" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-        <!-- Spot cards will be injected here by renderSpots() -->
+      <!-- Dashboard Stats -->
+      <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+        <div class="stats bg-gray-800 p-5 rounded-xl shadow-lg border border-gray-700 col-span-full lg:col-span-1">
+            <h3 class="text-xl font-semibold mb-3 flex items-center"><i data-lucide="bar-chart-3" class="w-5 h-5 mr-2"></i>Spot Type Breakdown</h3>
+            <canvas id="spotTypeChart" width="400" height="270" class="w-full"></canvas>
+            <div class="switch-toggle flex justify-center bg-gray-700 p-1 rounded-lg mt-4">
+                <input type="radio" id="chartTypeBar" name="chartType" value="bar" checked onclick="renderDashboardStats(false)">
+                <label for="chartTypeBar" class="text-sm">Bar</label>
+                <input type="radio" id="chartTypePie" name="chartType" value="pie" onclick="renderDashboardStats(true)">
+                <label for="chartTypePie" class="text-sm">Pie</label>
+            </div>
+        </div>
+        <div id="globalStats" class="grid grid-cols-2 gap-4 col-span-full lg:col-span-2">
+            <!-- Global Stats Cards -->
+        </div>
+      </div>
+      
+      <!-- Spot Cards -->
+      <h3 class="text-2xl font-bold mb-4">Available Spots (<span id="spotCount">0</span>)</h3>
+      <div id="spotGrid" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+        <!-- Spot cards will be rendered here -->
       </div>
     </section>
 
     <!-- Profile View -->
     <section id="profile" class="view" style="display:none;">
-      <div class="bg-gray-800 p-6 rounded-xl shadow-lg mb-6">
-        <div class="flex items-center space-x-4">
-            <i data-lucide="user-circle" class="w-16 h-16 text-accent"></i>
+      <div class="bg-gray-800 p-6 rounded-xl shadow-2xl mb-8 border border-gray-700">
+        <div class="flex items-center mb-6 border-b border-gray-700 pb-4">
+            <div class="w-16 h-16 bg-amber-500 rounded-full flex items-center justify-center text-3xl font-bold text-gray-900 mr-4">U</div>
             <div>
-                <h2 class="text-3xl font-bold" id="profileUsername">Loading...</h2>
-                <p class="text-sm text-gray-400">User ID: <span id="profileUserId">...</span></p>
-            </div>
-        </div>
-        <div class="mt-4 flex space-x-6">
-            <div class="text-center">
-                <span class="text-xl font-bold text-green-400" id="profileLevel">0</span>
-                <p class="text-sm text-gray-400">Level</p>
-            </div>
-            <div class="text-center">
-                <span class="text-xl font-bold text-blue-400" id="profileXP">0</span>
-                <p class="text-sm text-gray-400">XP</p>
-            </div>
-        </div>
-      </div>
-      
-      <!-- Two-Column Layout for Profile Content -->
-      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
-        <!-- Column 1: Favorites and Activity -->
-        <div class="lg:col-span-1 space-y-6">
-            <div class="bg-gray-800 p-6 rounded-xl shadow-lg">
-                <h3 class="text-xl font-semibold mb-3 border-b border-gray-700 pb-2 flex justify-between items-center">
-                    <span>Favorites</span>
-                    <i data-lucide="heart" class="w-5 h-5 text-red-500"></i>
-                </h3>
-                <div id="profileFavorites" class="space-y-2">
-                    <!-- Favorites are injected here -->
-                </div>
-            </div>
-            
-            <div class="bg-gray-800 p-6 rounded-xl shadow-lg">
-                <h3 class="text-xl font-semibold mb-3 border-b border-gray-700 pb-2 flex justify-between items-center">
-                    <span>Activity Feed</span>
-                    <i data-lucide="rss" class="w-5 h-5 text-yellow-500"></i>
-                </h3>
-                <ul id="profileActivity" class="space-y-1">
-                    <!-- Activity items are injected here -->
-                </ul>
+                <h2 class="text-3xl font-bold">My Breaker Profile</h2>
+                <p class="text-sm text-gray-400">User ID: <code id="displayUserId" class="bg-gray-700 px-2 py-0.5 rounded text-xs">Loading...</code></p>
             </div>
         </div>
         
-        <!-- Column 2: Collections and Achievements -->
-        <div class="lg:col-span-2 space-y-6">
-            <div class="bg-gray-800 p-6 rounded-xl shadow-lg">
-                <h3 class="text-xl font-semibold mb-3 border-b border-gray-700 pb-2 flex justify-between items-center">
-                    <span>My Collections</span>
-                    <i data-lucide="folders" class="w-5 h-5 text-blue-400"></i>
-                </h3>
-                <div id="profileCollections" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <!-- Collections are injected here -->
+        <div class="grid lg:grid-cols-3 gap-6">
+            <!-- Left Column: Settings and Stats -->
+            <div class="lg:col-span-1 space-y-6">
+                <div class="bg-gray-700 p-4 rounded-lg">
+                    <h3 class="text-xl font-semibold mb-3 flex items-center"><i data-lucide="settings" class="w-5 h-5 mr-2"></i>App Settings</h3>
+                    <div class="flex items-center justify-between">
+                        <label for="themeColorPicker" class="text-gray-300">Accent Color:</label>
+                        <input type="color" id="themeColorPicker" class="w-10 h-10 rounded-full cursor-pointer border-none p-0" />
+                    </div>
+                </div>
+                
+                <div class="bg-gray-700 p-4 rounded-lg">
+                    <h3 class="text-xl font-semibold mb-3 flex items-center"><i data-lucide="activity" class="w-5 h-5 mr-2"></i>Recent Activity</h3>
+                    <ul id="profileActivity" class="text-sm space-y-2">
+                        <!-- Activity Feed Items -->
+                    </ul>
+                </div>
+
+                <div class="bg-gray-700 p-4 rounded-lg">
+                    <h3 class="text-xl font-semibold mb-3 flex items-center"><i data-lucide="target" class="w-5 h-5 mr-2"></i>Challenges</h3>
+                    <div id="challenges" class="space-y-3">
+                        <!-- Challenges will be rendered here -->
+                    </div>
                 </div>
             </div>
-            
-            <div class="bg-gray-800 p-6 rounded-xl shadow-lg">
-                <h3 class="text-xl font-semibold mb-3 border-b border-gray-700 pb-2 flex justify-between items-center">
-                    <span>Achievements</span>
-                    <i data-lucide="award" class="w-5 h-5 text-yellow-500"></i>
-                </h3>
-                <div id="profileAchievements" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <!-- Achievements are injected here -->
+
+            <!-- Right Columns: Favorites, Collections, Achievements -->
+            <div class="lg:col-span-2 space-y-6">
+                <!-- Favorites -->
+                <div class="bg-gray-700 p-4 rounded-lg">
+                    <h3 class="text-xl font-semibold mb-3 flex items-center"><i data-lucide="heart" class="w-5 h-5 mr-2 text-red-400"></i>Favorite Spots (<span id="favCount">0</span>)</h3>
+                    <div id="profileFavorites" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <!-- Favorite Spot Cards -->
+                    </div>
+                    <p id="noFavorites" class="text-gray-400 mt-2 hidden">You haven't favorited any spots yet. Find some on the Dashboard!</p>
                 </div>
-            </div>
-            
-            <div class="bg-gray-800 p-6 rounded-xl shadow-lg">
-                <h3 class="text-xl font-semibold mb-3 border-b border-gray-700 pb-2 flex justify-between items-center">
-                    <span>User Challenges</span>
-                    <i data-lucide="swords" class="w-5 h-5 text-red-500"></i>
-                </h3>
-                <div id="challenges" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <!-- Challenges are injected here -->
+
+                <!-- Collections -->
+                <div class="bg-gray-700 p-4 rounded-lg">
+                    <h3 class="text-xl font-semibold mb-3 flex items-center justify-between">
+                        <span class="flex items-center"><i data-lucide="package" class="w-5 h-5 mr-2"></i>My Collections</span>
+                        <button onclick="openModal('addCollectionModal')" class="btn-primary py-1 px-3 text-sm">
+                            <i data-lucide="plus" class="w-4 h-4 inline-block mr-1"></i> New
+                        </button>
+                    </h3>
+                    <div id="profileCollections" class="space-y-4">
+                        <!-- Collection Cards -->
+                    </div>
+                    <p id="noCollections" class="text-gray-400 mt-2 hidden">Create collections to group spots for your next trip or training.</p>
+                </div>
+
+                <!-- Achievements -->
+                <div class="bg-gray-700 p-4 rounded-lg">
+                    <h3 class="text-xl font-semibold mb-3 flex items-center"><i data-lucide="trophy" class="w-5 h-5 mr-2 text-yellow-400"></i>Achievements</h3>
+                    <div id="profileAchievements" class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                        <!-- Achievement Cards -->
+                    </div>
                 </div>
             </div>
         </div>
       </div>
     </section>
 
-    <!-- Leaderboard View -->
+    <!-- Leaderboard + Hall of Fame View -->
     <section id="leaderboardView" class="view" style="display:none;">
-      <h2 class="text-3xl font-bold mb-6">Community Ranks & Stats</h2>
-      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
-        <!-- Global Stats Canvas -->
-        <div class="lg:col-span-2 bg-gray-800 p-6 rounded-xl shadow-lg" id="globalStats">
-          <!-- Global stats chart/data injected here -->
-        </div>
-
-        <!-- Leaderboard -->
-        <div class="lg:col-span-1 bg-gray-800 p-6 rounded-xl shadow-lg">
-            <h3 class="text-2xl font-semibold mb-4 border-b border-gray-700 pb-2 flex justify-between items-center">
-                <span>Top B-Boys/B-Girls</span>
-                <i data-lucide="trophy" class="w-6 h-6 text-yellow-400"></i>
-            </h3>
-            <div id="leaderboard" class="space-y-2">
-                <!-- Leader cards injected here -->
-            </div>
+      <h2 class="text-3xl font-bold mb-6">Breaker Community Ranks</h2>
+      
+      <div class="bg-gray-800 p-6 rounded-xl shadow-2xl mb-8 border border-gray-700">
+        <h3 class="text-2xl font-semibold mb-4 border-b border-gray-700 pb-2 flex items-center"><i data-lucide="list-ordered" class="w-5 h-5 mr-2"></i>Top Breakers Leaderboard</h3>
+        <div id="leaderboard" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <!-- Leaderboard items -->
         </div>
       </div>
       
-      <!-- Hall of Fame -->
-      <div class="mt-6 bg-gray-800 p-6 rounded-xl shadow-lg">
-        <h3 class="text-2xl font-semibold mb-4 border-b border-gray-700 pb-2 flex justify-between items-center">
-            <span>Hall of Fame</span>
-            <i data-lucide="sparkles" class="w-6 h-6 text-pink-400"></i>
-        </h3>
-        <div id="hallOfFame" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          <!-- Hall of Fame cards injected here -->
+      <div class="bg-gray-800 p-6 rounded-xl shadow-2xl border border-gray-700">
+        <h3 class="text-2xl font-semibold mb-4 border-b border-gray-700 pb-2 flex items-center"><i data-lucide="star" class="w-5 h-5 mr-2 text-yellow-500"></i>Hall of Fame</h3>
+        <div id="hallOfFame" class="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <!-- Hall of Fame items -->
         </div>
       </div>
     </section>
 
     <!-- Story mode slideshow -->
     <section id="storyMode" class="view" style="display:none;">
-      <h2 class="text-3xl font-bold mb-6">BreakAtlas Story Mode</h2>
-      <div id="storySlides" class="flex justify-center mb-6">
-        <!-- Story slide injected here -->
-      </div>
-      <div class="flex justify-center space-x-4">
-        <button id="prevSlide" class="btn-secondary flex items-center space-x-2"><i data-lucide="chevron-left" class="w-5 h-5"></i><span>Previous</span></button>
-        <button id="nextSlide" class="btn-primary flex items-center space-x-2"><span>Next</span><i data-lucide="chevron-right" class="w-5 h-5"></i></button>
-        <button id="exitStory" class="btn-secondary">Exit Story Mode</button>
+      <h2 class="text-3xl font-bold mb-6">The Journey: BreakAtlas Guide</h2>
+      <div class="bg-gray-800 p-6 rounded-xl shadow-2xl border border-gray-700">
+        <div id="storySlides" class="relative overflow-hidden min-h-[300px]">
+            <!-- Slide content here -->
+        </div>
+        <div class="flex justify-between items-center mt-6">
+          <button id="prevSlide" class="btn-secondary flex items-center" disabled><i data-lucide="chevron-left" class="w-5 h-5 mr-1"></i> Previous</button>
+          <div id="slideIndicators" class="flex space-x-2"></div>
+          <button id="nextSlide" class="btn-primary flex items-center">Next <i data-lucide="chevron-right" class="w-5 h-5 ml-1"></i></button>
+        </div>
       </div>
     </section>
-
   </main>
 
-  <!-- === MODALS === -->
+  <!-- --- MODALS --- -->
 
-  <!-- Collection Modal -->
-  <div id="collectionModal" class="fixed inset-0 bg-black bg-opacity-75 z-50 flex items-center justify-center p-4 hidden">
-    <div class="bg-gray-800 p-6 rounded-xl shadow-2xl max-w-md w-full space-y-4">
-      <h3 class="text-2xl font-bold border-b border-gray-700 pb-3">Add to Collection</h3>
-      
-      <div id="collectionOptions" class="space-y-3 p-3 bg-gray-700 rounded-lg max-h-40 overflow-y-auto">
-        <!-- Collection checkboxes injected here -->
-      </div>
-
-      <div class="space-y-2">
-        <h4 class="font-semibold text-lg mt-4">Create New Collection</h4>
-        <input type="text" id="newCollectionName" placeholder="Enter collection name (e.g., 'Power Move Spots')" class="w-full p-3 bg-gray-900 border border-gray-700 rounded-lg text-white" />
-        <button id="createNewCollectionBtn" class="btn-secondary w-full">Create & Save</button>
-      </div>
-
-      <div class="flex justify-end pt-2">
-        <button onclick="closeModal('collectionModal')" class="btn-primary">Done</button>
+  <!-- Add Collection Modal -->
+  <div id="addCollectionModal" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 hidden" onclick="closeModal(event.target.id)">
+    <div class="bg-gray-800 p-6 rounded-xl shadow-2xl max-w-md w-full border border-gray-700">
+      <h3 class="text-xl font-semibold mb-4 border-b border-gray-700 pb-2">Create New Collection</h3>
+      <input type="text" id="newCollectionName" placeholder="Collection Name (e.g., 'Paris Trip Spots')" class="w-full p-3 rounded-lg bg-gray-700 border border-gray-600 focus:ring-amber-500 focus:border-amber-500 text-gray-100 mb-4"/>
+      <div class="flex justify-end space-x-2">
+        <button onclick="closeModal('addCollectionModal')" class="btn-secondary">Cancel</button>
+        <button onclick="handleAddCollection()" class="btn-primary">Create Collection</button>
       </div>
     </div>
   </div>
-  
-  <!-- Delete Confirmation Modal -->
-  <div id="deleteModal" class="fixed inset-0 bg-black bg-opacity-75 z-50 flex items-center justify-center p-4 hidden">
-    <div class="bg-gray-800 p-6 rounded-xl shadow-2xl max-w-md w-full">
+
+  <!-- Delete Collection Modal -->
+  <div id="deleteModal" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 hidden" onclick="closeModal(event.target.id)">
+    <div class="bg-gray-800 p-6 rounded-xl shadow-2xl max-w-md w-full border border-gray-700">
       <div class="flex items-center space-x-3">
         <div class="p-2 bg-red-800 rounded-full">
             <i data-lucide="alert-triangle" class="w-6 h-6 text-red-300"></i>
         </div>
-        <h3 class="text-xl font-semibold">Delete Collection</h3>
+        <h3 class="text-xl font-semibold">Confirm Deletion</h3>
       </div>
-      <p class="text-gray-300 my-4">Are you sure you want to delete the collection "<strong id="deleteModalCollectionName"></strong>"? This action cannot be undone.</p>
+      <p class="text-gray-300 my-4">Are you sure you want to delete the collection "<strong id="deleteModalCollectionName"></strong>"? This action cannot be undone and will remove all spots from this collection.</p>
       <div class="flex justify-end space-x-2 mt-4">
         <button onclick="closeModal('deleteModal')" class="btn-secondary">Cancel</button>
         <button id="deleteModalConfirmBtn" class="btn-danger">Delete</button>
@@ -330,64 +335,847 @@
     </div>
   </div>
 
-
   <!-- Share Popup (Fallback) -->
-  <div id="sharePopup" class="fixed bottom-6 right-6 bg-gray-800 p-4 rounded-lg shadow-xl z-40 space-y-3 border border-gray-700 hidden">
+  <div id="sharePopup" class="fixed bottom-6 right-6 bg-gray-800 p-4 rounded-xl shadow-2xl z-40 space-y-3 border border-gray-700 hidden">
     <h4 class="font-semibold text-lg">Share this spot</h4>
-    <div id="sharePopupLinks" class="flex flex-col space-y-2"></div>
+    <div id="sharePopupLinks" class="flex flex-col space-y-2 text-sm"></div>
     <button onclick="closeSharePopup()" class="btn-secondary w-full mt-2">Close</button>
   </div>
 
+  <!-- Leaflet and Firebase Scripts -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20n63W4gmCRHMz14bbuE36S5e5fP5hQ1e9w5jF+6ZpQ=" crossorigin=""></script>
+  <script type="module">
+    // Firebase Imports
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { 
+      getAuth, 
+      signInAnonymously, 
+      signInWithCustomToken, 
+      onAuthStateChanged 
+    } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { 
+      getFirestore, 
+      doc, 
+      setDoc, 
+      onSnapshot, 
+      updateDoc,
+      arrayUnion,
+      arrayRemove,
+      collection,
+      query,
+      where,
+      getDocs,
+      limit,
+      orderBy,
+      setLogLevel
+    } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-  <!-- External Scripts -->
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/leaflet.locatecontrol/dist/L.Control.Locate.min.js" charset="utf-8"></script>
-  
-  <script type="module" src="data.js"></script>
-  <script type="module" src="app.js"></script>
-  <script>
-    // Initialize Lucide icons
-    lucide.createIcons();
+    // Set Firebase log level to Debug for visibility
+    setLogLevel('Debug');
 
-    // Function to toggle the mobile navigation menu
-    function toggleMenu() {
-        const navLinks = document.getElementById('navLinks');
-        if (navLinks) {
-            // Toggles the 'hidden' class to show/hide the menu on mobile
-            navLinks.classList.toggle('hidden');
-            // Toggles 'flex' to ensure it's displayed correctly when shown
-            navLinks.classList.toggle('flex'); 
+    // === INJECTED FIREBASE CONFIG ===
+    const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+    const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+    const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : undefined;
+
+    // === FIREBASE INITIALIZATION & STATE ===
+    let app, auth, db, userId;
+    let userDocRef;
+    let userUnsubscribe = () => {}; // Function to detach onSnapshot listener
+
+    // Application State (synced with Firestore)
+    let state = {
+        favorites: [],
+        collections: {}, // { name: [spotId, ...] }
+        activityFeed: [],
+        achievements: [],
+        themeColor: localStorage.getItem("themeColor") || "#ff9f1c",
+        isAuthReady: false,
+    };
+
+    try {
+        app = initializeApp(firebaseConfig);
+        db = getFirestore(app);
+        auth = getAuth(app);
+        console.log("Firebase services initialized.");
+
+        // 1. Authenticate user
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                userId = user.uid;
+                userDocRef = doc(db, `/artifacts/${appId}/users/${userId}/breakatlas_data`, 'user_profile');
+                console.log("User authenticated. UID:", userId);
+                document.getElementById('displayUserId').textContent = userId;
+                
+                // 2. Load and listen to user data
+                userUnsubscribe = onSnapshot(userDocRef, (docSnap) => {
+                    if (docSnap.exists()) {
+                        const userData = docSnap.data();
+                        state.favorites = userData.favorites || [];
+                        state.collections = userData.collections || {};
+                        state.activityFeed = userData.activityFeed || [];
+                        state.achievements = userData.achievements || [];
+                        console.log("User data loaded from Firestore:", userData);
+                    } else {
+                        // Initialize new user document
+                        console.log("New user. Initializing profile in Firestore.");
+                        setDoc(userDocRef, { 
+                            favorites: [], 
+                            collections: {}, 
+                            activityFeed: [],
+                            achievements: [],
+                            createdAt: new Date(),
+                        });
+                    }
+                    // Data is ready, render the views
+                    renderAllViews();
+                }, (error) => {
+                    console.error("Error listening to user data:", error);
+                });
+            } else {
+                console.log("User signed out or failed to sign in.");
+                // Fallback for UI if auth fails (e.g., clear profile data)
+                userId = crypto.randomUUID(); // Use temp ID if anonymous fails
+                document.getElementById('displayUserId').textContent = userId + " (Anonymous)";
+                renderAllViews();
+            }
+            state.isAuthReady = true;
+        });
+
+        if (initialAuthToken) {
+            await signInWithCustomToken(auth, initialAuthToken);
+        } else {
+            await signInAnonymously(auth);
+        }
+
+    } catch (error) {
+        console.error("Firebase initialization failed:", error);
+    }
+
+    // --- STATIC DATA (Copied from data.js) ---
+    const spots = [
+      // France
+      { id:"spot_boty", name:"Battle of the Year France", city:"Montpellier", country:"France", crew:"Vagabonds Crew", type:"Jam", image:"https://placehold.co/800x500/ff9f1c/111827?text=Jam+BOTY", lat:43.61, lng:3.87, about:"Legendary European breaking championship qualifier.", reviews:[{rating:5,text:"Historic jam."}] },
+      { id:"spot_laplace", name:"La Place Hip Hop", city:"Paris", country:"France", crew:"Paris City Breakers", type:"Training", image:"https://placehold.co/800x500/2ec4b6/111827?text=Training+Spot", lat:48.86, lng:2.35, about:"Hip‑hop center with regular breaking sessions.", reviews:[{rating:5,text:"Perfect training spot."}] },
+      { id:"spot_centquatre", name:"Centquatre (104)", city:"Paris", country:"France", crew:"Aktuel Force", type:"Training", image:"https://placehold.co/800x500/2ec4b6/111827?text=Training+Spot", lat:48.89, lng:2.37, about:"Public venue with open spaces where breakers train daily.", reviews:[{rating:4,text:"Always cyphers, great energy."}] },
+      // Netherlands
+      { id:"spot_ibe", name:"The Notorious IBE", city:"Heerlen", country:"Netherlands", crew:"Holland Crew", type:"Jam", image:"https://placehold.co/800x500/ff9f1c/111827?text=Jam+IBE", lat:50.88, lng:5.97, about:"The world's leading urban dance festival and a breaking pilgrimage.", reviews:[{rating:5,text:"A breaker's paradise."}] },
+      // Germany
+      { id:"spot_berlin_cypher", name:"Berlin Cypher Spot", city:"Berlin", country:"Germany", crew:"Flying Steps", type:"Cypher", image:"https://placehold.co/800x500/3b82f6/111827?text=Cypher+Image", lat:52.52, lng:13.40, about:"Underground street sessions, strong focus on raw battles.", reviews:[{rating:5,text:"Raw energy."}] },
+      { id:"spot_munich_training", name:"Munich Training Spot", city:"Munich", country:"Germany", crew:"Southside Rockers", type:"Training", image:"https://placehold.co/800x500/2ec4b6/111827?text=Training+Spot", lat:48.14, lng:11.58, about:"Indoor studio with open practice nights and cyphers.", reviews:[{rating:4,text:"Great floors."}] },
+      // Italy
+      { id:"spot_rome_cyphers", name:"Rome Street Cyphers", city:"Rome", country:"Italy", crew:"Rome City Rockers", type:"Cypher", image:"https://placehold.co/800x500/3b82f6/111827?text=Cypher+Image", lat:41.90, lng:12.50, about:"Open-air cyphers near cultural hubs, weekly sessions.", reviews:[{rating:4,text:"Pure vibe."}] },
+      { id:"spot_milanhub", name:"Milan Breaking Hub", city:"Milan", country:"Italy", crew:"Bandits Crew", type:"Training", image:"https://placehold.co/800x500/2ec4b6/111827?text=Training+Spot", lat:45.46, lng:9.19, about:"Community gym with daily practice and weekend cyphers.", reviews:[{rating:5,text:"Solid training schedule."}] },
+      // Spain
+      { id:"spot_barcelona", name:"Barcelona Beach Cyphers", city:"Barcelona", country:"Spain", crew:"BCN Breakers", type:"Cypher", image:"https://placehold.co/800x500/3b82f6/111827?text=Cypher+Image", lat:41.39, lng:2.17, about:"Sunset cyphers by the Mediterranean Sea. Legendary spot.", reviews:[{rating:5,text:"Incredible backdrop."}] },
+      { id:"spot_madrid_train", name:"Madrid Power Move Center", city:"Madrid", country:"Spain", crew:"Break Machine", type:"Training", image:"https://placehold.co/800x500/2ec4b6/111827?text=Training+Spot", lat:40.41, lng:-3.70, about:"A dedicated facility for power move training with sprung floors.", reviews:[{rating:5,text:"Perfect for air flares."}] },
+    ];
+
+    const storySlidesData = [
+      { 
+        title: "Welcome to BreakAtlas!", 
+        text: "Your ultimate guide to the global breaking scene. Let's explore the key features to get you started on your journey. Find Jams, Cyphers, and Training Spots!",
+        image: "https://placehold.co/600x300/1f2937/ff9f1c?text=Welcome+Breaker"
+      },
+      { 
+        title: "The Interactive Map", 
+        text: "The Dashboard features a live map showing all the spots. Click on a marker to see details and use the search bar to filter by location or type (Jam, Cypher, Training).",
+        image: "https://placehold.co/600x300/1f2937/3b82f6?text=Map+View"
+      },
+      { 
+        title: "Build Your Profile", 
+        text: "Your Profile is where your journey is tracked. Save spots to your Favorites, create custom Collections for trips, and earn Achievements as you explore the world.",
+        image: "https://placehold.co/600x300/1f2937/22c55e?text=User+Profile"
+      },
+      { 
+        title: "Sync with Firestore", 
+        text: "Your data is saved in real-time using Google Firestore. Your Favorites and Collections are always ready, no matter what device you use!",
+        image: "https://placehold.co/600x300/1f2937/ef4444?text=Cloud+Sync"
+      },
+    ];
+
+    // --- GLOBAL VARIABLES (from app.js) ---
+    let map;
+    let markers = [];
+    let currentView = "dashboard";
+    let currentSlide = 0;
+    
+    // --- UTILITIES ---
+
+    // Function to log activity to Firestore
+    async function logActivity(message) {
+        if (!state.isAuthReady || !userDocRef) return;
+        
+        try {
+            await updateDoc(userDocRef, {
+                activityFeed: arrayUnion({ timestamp: new Date().toISOString(), message: message })
+            });
+        } catch (error) {
+            console.error("Error logging activity:", error);
         }
     }
 
-    // Function to switch between main views (Called from inline onclick handlers)
+    // Function to calculate spot type counts
+    function countType(type) {
+        return spots.filter(s => s.type === type).length;
+    }
+
+    // Get color based on spot type
+    function getTypeColor(type) {
+        switch (type) {
+            case 'Jam': return '#ef4444'; // Red
+            case 'Cypher': return '#3b82f6'; // Blue
+            case 'Training': return '#22c55e'; // Green
+            default: return '#9ca3af'; // Gray
+        }
+    }
+
+    // --- CORE UI LOGIC ---
+
+    function initTheme() {
+        const picker = document.getElementById("themeColorPicker");
+        document.documentElement.style.setProperty("--accent", state.themeColor);
+        document.documentElement.style.setProperty("--accent-hover", state.themeColor + 'B0'); // Simple hover effect
+        
+        if (picker) {
+            picker.value = state.themeColor;
+            picker.oninput = (e) => {
+                state.themeColor = e.target.value;
+                document.documentElement.style.setProperty("--accent", state.themeColor);
+                localStorage.setItem("themeColor", state.themeColor);
+                logActivity(`Changed theme color to ${state.themeColor}`);
+            };
+        }
+    }
+    
+    // Switch between views
     function showView(viewId) {
-        // 1. Hide all view sections
         document.querySelectorAll('.view').forEach(view => {
             view.style.display = 'none';
         });
-
-        // 2. Show the requested view
-        const activeView = document.getElementById(viewId);
-        if (activeView) {
-            activeView.style.display = 'block';
+        const viewToShow = document.getElementById(viewId);
+        if (viewToShow) {
+            viewToShow.style.display = 'block';
+            currentView = viewId;
+            // Re-render only the necessary view after transition
+            if (viewId === 'dashboard') {
+                // Ensure map is invalidated if it was hidden
+                if (map) map.invalidateSize();
+                renderSpots(spots); // Re-render spots list and map markers
+            } else if (viewId === 'profile') {
+                renderProfile();
+            } else if (viewId === 'leaderboardView') {
+                renderLeaderboard();
+                renderHallOfFame();
+            } else if (viewId === 'storyMode') {
+                renderStorySlide(currentSlide);
+            }
         }
+        // Close mobile menu if open
+        const mobileMenu = document.getElementById('mobileMenu');
+        if (mobileMenu && mobileMenu.classList.contains('flex')) {
+            mobileMenu.classList.remove('flex');
+            mobileMenu.classList.add('hidden');
+        }
+        // Force lucide icon replacement on view switch
+        lucide.createIcons();
+    }
 
-        // 3. Hide mobile menu after selection (good UX)
-        const navLinks = document.getElementById('navLinks');
-        if (navLinks && navLinks.classList.contains('flex')) {
-            toggleMenu();
+    function toggleMenu() {
+        const mobileMenu = document.getElementById('mobileMenu');
+        mobileMenu.classList.toggle('hidden');
+        mobileMenu.classList.toggle('flex');
+    }
+
+    // --- MAP FUNCTIONS ---
+
+    function initMap() {
+        if (!document.getElementById('map')) return;
+
+        // Initialize map centered on Europe
+        map = L.map('map').setView([51.505, 10.09], 4); 
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
+
+        // Add initial markers
+        updateMapMarkers(spots);
+    }
+
+    function updateMapMarkers(filteredSpots) {
+        // Clear existing markers
+        markers.forEach(marker => map.removeLayer(marker));
+        markers = [];
+
+        filteredSpots.forEach(spot => {
+            const color = getTypeColor(spot.type);
+            const iconHtml = `<div style="background-color: ${color}; border: 3px solid #1f2937; color: white; border-radius: 50%; width: 20px; height: 20px; text-align: center; line-height: 20px; font-weight: bold; font-size: 10px; box-shadow: 0 0 8px rgba(0,0,0,0.5);"></div>`;
+
+            const customIcon = L.divIcon({
+                className: 'custom-div-icon',
+                html: iconHtml,
+                iconSize: [24, 24],
+                iconAnchor: [12, 12]
+            });
+
+            const marker = L.marker([spot.lat, spot.lng], { icon: customIcon }).addTo(map);
+            
+            // Create popup content with modern styling
+            const isFavorite = state.favorites.includes(spot.id);
+            const favIcon = isFavorite ? 'heart' : 'heart';
+            const favColor = isFavorite ? 'text-red-500' : 'text-gray-400';
+
+            const popupContent = `
+                <div class="p-2 space-y-2">
+                    <h4 class="text-xl font-bold">${spot.name}</h4>
+                    <p class="text-sm text-gray-400">Type: <span style="color:${color}; font-weight:600;">${spot.type}</span> | Crew: ${spot.crew}</p>
+                    <p class="text-sm">${spot.about}</p>
+                    <div class="flex space-x-2 mt-3">
+                        <button onclick="toggleFavorite('${spot.id}')" class="flex items-center text-sm ${favColor} hover:text-red-500 transition-colors">
+                            <i data-lucide="${favIcon}" class="w-4 h-4 mr-1 fill-current"></i> 
+                            ${isFavorite ? 'Unfavorite' : 'Favorite'}
+                        </button>
+                        <button onclick="shareSpot('${spot.id}')" class="flex items-center text-sm text-gray-400 hover:text-amber-400 transition-colors">
+                            <i data-lucide="share-2" class="w-4 h-4 mr-1"></i> Share
+                        </button>
+                    </div>
+                </div>
+            `;
+
+            marker.bindPopup(popupContent, {
+                minWidth: 250
+            }).on('popupopen', () => {
+                // Rerender Lucide icons inside the popup
+                lucide.createIcons();
+            });
+
+            markers.push(marker);
+        });
+
+        // If markers exist, ensure map bounds cover them
+        if (markers.length > 0) {
+            const group = new L.featureGroup(markers);
+            map.fitBounds(group.getBounds().pad(0.1));
+        } else {
+             // Reset view if no markers
+             map.setView([51.505, 10.09], 4);
         }
     }
 
-    // Initial render for Story Mode content placeholder
-    window.addEventListener('load', () => {
-        // Ensure story is rendered once map/data loads
-        if(document.getElementById('storyMode').style.display === 'block' && typeof renderStory === 'function') {
-             // renderStory is likely defined in app.js (a module), this check is primarily for debugging/future module export
-             // The logic is now mostly handled by the onclick/showView
+    // --- DATA RENDERING ---
+
+    function renderAllViews() {
+        if (!state.isAuthReady) return;
+
+        renderSpots(spots);
+        renderDashboardStats(document.getElementById('chartTypePie')?.checked || false);
+        
+        if (currentView === 'profile') renderProfile();
+        if (currentView === 'leaderboardView') {
+            renderLeaderboard();
+            renderHallOfFame();
         }
+        // Ensure initial view is set and icons are created
+        showView(currentView);
+        lucide.createIcons();
+    }
+
+    function renderSpots(filteredSpots) {
+        const grid = document.getElementById('spotGrid');
+        const spotCount = document.getElementById('spotCount');
+        if (!grid || !spotCount) return;
+
+        grid.innerHTML = filteredSpots.map(spot => {
+            const isFavorite = state.favorites.includes(spot.id);
+            const favIcon = isFavorite ? 'heart' : 'heart';
+            const favColor = isFavorite ? 'text-red-500 fill-red-500' : 'text-gray-400';
+            const color = getTypeColor(spot.type);
+
+            return `
+                <div class="spot-card bg-gray-800 p-4 rounded-xl shadow-lg border-t-4 border-l-2" style="border-color: ${color};">
+                    <div class="flex items-center justify-between mb-3">
+                        <h4 class="text-xl font-semibold">${spot.name}</h4>
+                        <span class="text-xs font-medium px-3 py-1 rounded-full text-gray-900" style="background-color: ${color};">${spot.type}</span>
+                    </div>
+                    <p class="text-sm text-gray-300 mb-2">${spot.city}, ${spot.country} | Crew: ${spot.crew}</p>
+                    <p class="text-gray-400 text-sm mb-4">${spot.about.substring(0, 80)}...</p>
+                    <div class="flex justify-between items-center pt-2 border-t border-gray-700">
+                        <button onclick="toggleFavorite('${spot.id}')" class="flex items-center text-sm font-medium ${favColor} hover:text-red-500 transition-colors">
+                            <i data-lucide="${favIcon}" class="w-4 h-4 mr-1"></i> 
+                            ${isFavorite ? 'Saved' : 'Save'}
+                        </button>
+                        <button onclick="shareSpot('${spot.id}')" class="flex items-center text-sm text-gray-400 hover:text-amber-400 transition-colors">
+                            <i data-lucide="share-2" class="w-4 h-4 mr-1"></i> Share
+                        </button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        spotCount.textContent = filteredSpots.length;
+        updateMapMarkers(filteredSpots);
+        lucide.createIcons();
+    }
+    
+    // Filters spots based on search input and type select
+    function filterSpots() {
+        const searchVal = document.getElementById('searchInput').value.toLowerCase();
+        const typeVal = document.getElementById('typeFilter').value;
+
+        const filtered = spots.filter(spot => {
+            const matchesSearch = !searchVal || 
+                                spot.name.toLowerCase().includes(searchVal) ||
+                                spot.city.toLowerCase().includes(searchVal) ||
+                                spot.crew.toLowerCase().includes(searchVal) ||
+                                spot.type.toLowerCase().includes(searchVal);
+            
+            const matchesType = !typeVal || spot.type === typeVal;
+
+            return matchesSearch && matchesType;
+        });
+
+        renderSpots(filtered);
+    }
+
+
+    function renderDashboardStats(usePie) {
+        const canvas = document.getElementById('spotTypeChart');
+        if (!canvas) return;
+        
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        const data = [
+            { label: "Jams", value: countType("Jam"), color: getTypeColor("Jam") },
+            { label: "Cyphers", value: countType("Cypher"), color: getTypeColor("Cypher") },
+            { label: "Training", value: countType("Training"), color: getTypeColor("Training") },
+        ];
+        const total = data.reduce((sum, d) => sum + d.value, 0) || 1;
+
+        ctx.fillStyle = "#f3f4f6"; // text-gray-100
+        ctx.font = "14px Inter";
+
+        if (!usePie) {
+            // Bar chart
+            const padding = 40;
+            const barWidth = Math.max(50, (canvas.width - 2 * padding) / data.length * 0.6);
+            const gap = (canvas.width - 2 * padding - (barWidth * data.length)) / (data.length - 1);
+            let x = padding;
+            const maxVal = Math.max(...data.map(d => d.value)) || 1;
+            const chartHeight = 180;
+            const scale = chartHeight / maxVal;
+            const yOffset = 230; // Base line for bars
+
+            data.forEach(d => {
+                const h = d.value * scale;
+                // Draw Bar
+                ctx.fillStyle = d.color;
+                ctx.fillRect(x, yOffset - h, barWidth, h);
+
+                // Draw Text
+                ctx.fillStyle = "#f3f4f6";
+                ctx.textAlign = "center";
+                ctx.fillText(`${d.label}`, x + barWidth / 2, yOffset + 20);
+                ctx.fillText(`(${d.value})`, x + barWidth / 2, yOffset + 40);
+                x += barWidth + gap;
+            });
+            
+            // Draw Y-axis line
+            ctx.strokeStyle = "#4b5563"; // gray-600
+            ctx.beginPath();
+            ctx.moveTo(padding - 10, yOffset);
+            ctx.lineTo(x - gap + 10, yOffset);
+            ctx.stroke();
+
+        } else {
+            // Pie chart
+            let start = 0;
+            const cx = canvas.width / 2;
+            const cy = 120;
+            const r = 90;
+
+            data.forEach(d => {
+                const angle = (d.value / total) * Math.PI * 2;
+                ctx.beginPath();
+                ctx.moveTo(cx, cy);
+                ctx.arc(cx, cy, r, start, start + angle);
+                ctx.closePath();
+                ctx.fillStyle = d.color;
+                ctx.fill();
+
+                // Draw label outside (simple text list for space)
+                ctx.fillStyle = "#f3f4f6";
+                ctx.textAlign = "left";
+                const labelX = cx - r;
+                const labelY = cy + r + 20 + data.indexOf(d) * 25;
+                ctx.fillRect(labelX, labelY - 8, 10, 10);
+                ctx.fillText(`${d.label} (${d.value}) - ${((d.value / total) * 100).toFixed(1)}%`, labelX + 15, labelY);
+                
+                start += angle;
+            });
+        }
+        
+        // Render Global Stats
+        const globalStats = document.getElementById('globalStats');
+        globalStats.innerHTML = `
+            ${renderStatCard('Spot Count', spots.length, 'globe', '#3b82f6')}
+            ${renderStatCard('Countries Mapped', new Set(spots.map(s => s.country)).size, 'map-pin', '#22c55e')}
+            ${renderStatCard('Total Reviews', spots.reduce((sum, s) => sum + (s.reviews?.length || 0), 0), 'message-square', '#ff9f1c')}
+            ${renderStatCard('Average Rating', (spots.reduce((sum, s) => sum + (s.reviews.reduce((rSum, r) => rSum + r.rating, 0) / (s.reviews.length || 1)), 0) / spots.length).toFixed(1) || '0.0', 'star', '#ef4444')}
+        `;
+        lucide.createIcons();
+    }
+
+    function renderStatCard(title, value, icon, color) {
+        return `
+            <div class="stat-card bg-gray-700 p-4 rounded-lg shadow-md border-l-4" style="border-color:${color};">
+                <div class="flex items-center justify-between">
+                    <p class="text-sm font-medium text-gray-300">${title}</p>
+                    <i data-lucide="${icon}" class="w-5 h-5" style="color:${color};"></i>
+                </div>
+                <p class="text-3xl font-bold mt-1">${value}</p>
+            </div>
+        `;
+    }
+
+    // --- PROFILE RENDERING ---
+
+    function renderProfile() {
+        if (!state.isAuthReady) return;
+        
+        // 1. Render Favorites
+        const favGrid = document.getElementById('profileFavorites');
+        const favCount = document.getElementById('favCount');
+        const noFavorites = document.getElementById('noFavorites');
+        
+        const favoriteSpots = spots.filter(s => state.favorites.includes(s.id));
+        
+        if (favoriteSpots.length > 0) {
+            favGrid.innerHTML = favoriteSpots.map(s => `
+                <div class="bg-gray-800 p-3 rounded-lg flex items-center justify-between border border-gray-700">
+                    <div>
+                        <p class="font-semibold">${s.name}</p>
+                        <p class="text-xs text-gray-400">${s.city}, ${s.country} | ${s.type}</p>
+                    </div>
+                    <button onclick="toggleFavorite('${s.id}')" class="text-red-500 hover:text-red-400 transition-colors p-1">
+                        <i data-lucide="heart" class="w-5 h-5 fill-red-500"></i>
+                    </button>
+                </div>
+            `).join('');
+            favCount.textContent = favoriteSpots.length;
+            noFavorites.classList.add('hidden');
+        } else {
+            favGrid.innerHTML = '';
+            favCount.textContent = 0;
+            noFavorites.classList.remove('hidden');
+        }
+
+        // 2. Render Collections
+        const collectionsDiv = document.getElementById('profileCollections');
+        const noCollections = document.getElementById('noCollections');
+
+        const collectionNames = Object.keys(state.collections);
+        if (collectionNames.length > 0) {
+            collectionsDiv.innerHTML = collectionNames.map(name => `
+                <div class="collection-card bg-gray-800 p-4 rounded-lg border border-gray-700">
+                    <div class="flex items-center justify-between mb-2">
+                        <h4 class="font-bold text-lg">${name} (${state.collections[name].length})</h4>
+                        <div class="flex space-x-2">
+                            <button onclick="openDeleteModal('${name}')" class="text-red-400 hover:text-red-500 transition-colors p-1">
+                                <i data-lucide="trash-2" class="w-4 h-4"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <p class="text-sm text-gray-400">${state.collections[name].map(id => spots.find(s => s.id === id)?.name || 'Unknown Spot').join(', ')}</p>
+                </div>
+            `).join('');
+            noCollections.classList.add('hidden');
+        } else {
+            collectionsDiv.innerHTML = '';
+            noCollections.classList.remove('hidden');
+        }
+
+        // 3. Render Activity Feed
+        const activityList = document.getElementById('profileActivity');
+        activityList.innerHTML = state.activityFeed
+            .slice(-5) // Show last 5 activities
+            .reverse()
+            .map(activity => {
+                const date = new Date(activity.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+                return `<li class="text-gray-300 border-b border-gray-800 pb-1 flex justify-between">${activity.message}<span class="text-gray-500 text-xs">${date}</span></li>`;
+            }).join('');
+
+        // 4. Render Achievements (Mock)
+        document.getElementById('profileAchievements').innerHTML = state.achievements.length > 0 ? 
+            state.achievements.map(a => `<div class="achievement-card bg-gray-800 p-3 rounded-lg text-center border border-gray-700">
+                <i data-lucide="award" class="w-6 h-6 text-yellow-400 mx-auto mb-1"></i>
+                <p class="text-sm font-medium">${a.name}</p>
+            </div>`).join('') :
+            '<p class="col-span-full text-gray-400">No achievements unlocked yet. Get moving!</p>';
+
+        // 5. Render Challenges (Mock)
+        document.getElementById('challenges').innerHTML = `
+            ${renderChallengeCard('Visit 3 Jams', 2, 3, 'Jam', '#ef4444')}
+            ${renderChallengeCard('Train in 5 Countries', 3, 5, 'Country', '#3b82f6')}
+            ${renderChallengeCard('Add 1 Collection', 1, 1, 'Collection', '#ff9f1c')}
+        `;
+
+        lucide.createIcons();
+    }
+
+    function renderChallengeCard(name, current, total, type, color) {
+        const percentage = Math.round((current / total) * 100);
+        const status = current >= total ? 'Complete' : 'In Progress';
+        return `
+            <div class="challenge-card bg-gray-800 p-3 rounded-lg border-l-4" style="border-color:${color};">
+                <p class="font-semibold text-sm">${name}</p>
+                <div class="h-2 bg-gray-700 rounded-full mt-1">
+                    <div class="h-2 rounded-full" style="width: ${percentage}%; background-color:${color};"></div>
+                </div>
+                <p class="text-xs text-gray-400 mt-1">${current}/${total} (${status})</p>
+            </div>
+        `;
+    }
+
+    // --- FIREBASE INTERACTIONS ---
+
+    async function toggleFavorite(spotId) {
+        if (!state.isAuthReady || !userDocRef) {
+            console.error("Auth not ready or userDocRef missing.");
+            return;
+        }
+
+        const isFavorite = state.favorites.includes(spotId);
+        const updateAction = isFavorite ? arrayRemove(spotId) : arrayUnion(spotId);
+        const actionName = isFavorite ? 'Removed from Favorites' : 'Added to Favorites';
+        const spotName = spots.find(s => s.id === spotId)?.name;
+
+        try {
+            await updateDoc(userDocRef, {
+                favorites: updateAction
+            });
+            logActivity(`${actionName}: ${spotName}`);
+            // The onSnapshot listener will automatically re-render the UI
+        } catch (error) {
+            console.error("Error updating favorites:", error);
+        }
+    }
+
+    // Collection Modal Functions
+
+    function openDeleteModal(collectionName) {
+        document.getElementById('deleteModalCollectionName').textContent = collectionName;
+        document.getElementById('deleteModalConfirmBtn').onclick = () => handleDeleteCollection(collectionName);
+        document.getElementById('deleteModal').classList.remove('hidden');
+    }
+
+    function closeModal(id) {
+        if (id && id.target) { // Handle click outside modal
+            if (id.target.id === 'addCollectionModal' || id.target.id === 'deleteModal') {
+                id.target.classList.add('hidden');
+            }
+        } else { // Handle click on button
+            document.getElementById(id).classList.add('hidden');
+        }
+    }
+
+    async function handleAddCollection() {
+        const nameInput = document.getElementById('newCollectionName');
+        const collectionName = nameInput.value.trim();
+
+        if (!collectionName) return;
+
+        if (state.collections[collectionName]) {
+            console.error("Collection already exists.");
+            // In a real app, show a UI warning/toast
+            return;
+        }
+
+        if (!state.isAuthReady || !userDocRef) return;
+        
+        try {
+            const newCollections = { ...state.collections, [collectionName]: [] };
+            await updateDoc(userDocRef, { collections: newCollections });
+            nameInput.value = '';
+            closeModal('addCollectionModal');
+            logActivity(`Created new collection: ${collectionName}`);
+        } catch (error) {
+            console.error("Error creating collection:", error);
+        }
+    }
+
+    async function handleDeleteCollection(collectionName) {
+        if (!state.isAuthReady || !userDocRef) return;
+        
+        try {
+            const newCollections = { ...state.collections };
+            delete newCollections[collectionName];
+            
+            await updateDoc(userDocRef, { collections: newCollections });
+            closeModal('deleteModal');
+            logActivity(`Deleted collection: ${collectionName}`);
+        } catch (error) {
+            console.error("Error deleting collection:", error);
+        }
+    }
+
+    // --- SHARING (FALLBACK) ---
+
+    function shareSpot(spotId) {
+        const spot = spots.find(s => s.id === spotId);
+        const url = window.location.href; 
+        
+        // Use Native Share API if available
+        if (navigator.share) {
+            navigator.share({
+                title: spot.name,
+                text: `Check out this spot: ${spot.name} (${spot.city}, ${spot.country}) - ${spot.about}`,
+                url: url
+            }).catch(error => console.error('Error sharing:', error));
+        } else {
+            // Fallback for browsers without native Share API
+            const sharePopup = document.getElementById('sharePopup');
+            const shareLinks = document.getElementById('sharePopupLinks');
+            sharePopup.classList.remove('hidden');
+            shareLinks.innerHTML = `
+                <p class="text-gray-400">Link copied to clipboard!</p>
+                <input type="text" id="shareUrl" value="${url}?spot=${spotId}" readonly 
+                       class="w-full p-2 rounded bg-gray-700 border border-gray-600 text-sm"/>
+                <button onclick="copyToClipboard('shareUrl')" class="btn-secondary w-full">Copy Link</button>
+            `;
+            // Attempt to copy automatically
+            copyToClipboardText(url + `?spot=${spotId}`, spot.name);
+            lucide.createIcons();
+        }
+    }
+    
+    function copyToClipboardText(text, name) {
+        const el = document.createElement('textarea');
+        el.value = text;
+        document.body.appendChild(el);
+        el.select();
+        document.execCommand('copy');
+        document.body.removeChild(el);
+        logActivity(`Shared link for: ${name}`);
+    }
+
+    function closeSharePopup() {
+        document.getElementById('sharePopup').classList.add('hidden');
+    }
+
+
+    // --- COMMUNITY VIEW RENDERING (Mock Data) ---
+
+    function renderLeaderboard() {
+        const leaderboardData = [
+            { name: "B-Boy K-Dot", rank: 1, points: 5020, spotsVisited: 25 },
+            { name: "B-Girl Vala", rank: 2, points: 4800, spotsVisited: 21 },
+            { name: "FlowMaster", rank: 3, points: 4100, spotsVisited: 18 },
+            { name: "Breaker Jake", rank: 4, points: 3500, spotsVisited: 15 },
+        ].sort((a, b) => a.rank - b.rank); // Already sorted
+
+        const leaderboardDiv = document.getElementById('leaderboard');
+        leaderboardDiv.innerHTML = leaderboardData.map(d => `
+            <div class="leader-card bg-gray-700 p-4 rounded-xl shadow-lg flex items-center space-x-4 border-l-4 border-amber-500">
+                <div class="text-3xl font-bold text-amber-500 w-10 text-center">${d.rank}</div>
+                <div class="flex-grow">
+                    <p class="font-semibold text-lg">${d.name}</p>
+                    <p class="text-sm text-gray-400">Points: ${d.points} | Visited: ${d.spotsVisited}</p>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    function renderHallOfFame() {
+        const fameData = [
+            { name: "B-Boy Taisuke", title: "World Champion" },
+            { name: "B-Girl Ami", title: "Olympic Gold" },
+            { name: "Hong 10", title: "Legend Status" },
+            { name: "P-Diddy", title: "Original Pioneer" }
+        ];
+
+        const hallOfFameDiv = document.getElementById('hallOfFame');
+        hallOfFameDiv.innerHTML = fameData.map(d => `
+            <div class="fame-card bg-gray-700 p-3 rounded-xl text-center border border-gray-600">
+                <i data-lucide="crown" class="w-6 h-6 text-yellow-300 mx-auto mb-1"></i>
+                <p class="font-semibold">${d.name}</p>
+                <p class="text-xs text-gray-400">${d.title}</p>
+            </div>
+        `).join('');
+    }
+
+
+    // --- STORY MODE SLIDESHOW ---
+
+    function renderStorySlide(index) {
+        const slidesDiv = document.getElementById('storySlides');
+        const prevBtn = document.getElementById('prevSlide');
+        const nextBtn = document.getElementById('nextSlide');
+        const indicatorsDiv = document.getElementById('slideIndicators');
+
+        if (index < 0 || index >= storySlidesData.length) return;
+
+        currentSlide = index;
+        const slide = storySlidesData[currentSlide];
+
+        // Render slide content
+        slidesDiv.innerHTML = `
+            <div class="p-6 text-center space-y-4">
+                <img src="${slide.image}" alt="${slide.title}" class="w-full max-h-72 object-cover rounded-lg mx-auto shadow-xl border border-gray-700">
+                <h3 class="text-2xl font-bold pt-4">${slide.title}</h3>
+                <p class="text-gray-300 max-w-2xl mx-auto">${slide.text}</p>
+            </div>
+        `;
+        
+        // Update indicators
+        indicatorsDiv.innerHTML = storySlidesData.map((_, i) => 
+            `<span class="w-3 h-3 rounded-full ${i === currentSlide ? 'bg-amber-500' : 'bg-gray-600'} cursor-pointer" onclick="renderStorySlide(${i})"></span>`
+        ).join('');
+
+        // Update buttons
+        prevBtn.disabled = currentSlide === 0;
+        nextBtn.disabled = currentSlide === storySlidesData.length - 1;
+        prevBtn.classList.toggle('opacity-50', currentSlide === 0);
+        nextBtn.classList.toggle('opacity-50', currentSlide === storySlidesData.length - 1);
+    }
+    
+    // Bind button listeners for story mode
+    document.addEventListener("DOMContentLoaded", () => {
+        document.getElementById('prevSlide')?.addEventListener('click', () => {
+            if (currentSlide > 0) renderStorySlide(currentSlide - 1);
+        });
+        document.getElementById('nextSlide')?.addEventListener('click', () => {
+            if (currentSlide < storySlidesData.length - 1) renderStorySlide(currentSlide + 1);
+        });
     });
+
+
+    // --- INITIALIZATION ---
+    document.addEventListener("DOMContentLoaded", () => {
+        initTheme();
+        initMap();
+        
+        // Start on dashboard view, which triggers first full render after auth
+        showView('dashboard'); 
+        
+        // Final icon creation pass
+        lucide.createIcons();
+    });
+
+    // Make functions globally accessible for inline HTML calls
+    window.showView = showView;
+    window.toggleMenu = toggleMenu;
+    window.toggleFavorite = toggleFavorite;
+    window.shareSpot = shareSpot;
+    window.filterSpots = filterSpots;
+    window.renderDashboardStats = renderDashboardStats;
+    window.openModal = (id) => document.getElementById(id).classList.remove('hidden');
+    window.closeModal = closeModal;
+    window.handleAddCollection = handleAddCollection;
+    window.openDeleteModal = openDeleteModal;
+    window.closeSharePopup = closeSharePopup;
 
   </script>
 </body>

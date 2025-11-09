@@ -5,16 +5,16 @@ body {
 
 /* Custom accent color variable */
 :root {
-  --accent: #ff9f1c;
-  --accent-hover: #ffb24a; /* Slightly lighter for hover effect */
+  --accent: #ff9f1c; /* Default Fallback: Bright Orange */
+  --accent-hover: #ffb24a;
 }
 
-/* Leaflet dark mode tiles */
-/* This filter attempts to invert a standard map for a dark mode aesthetic */
+/* Leaflet dark mode tiles - Simple filter to darken and desaturate base tiles */
 .leaflet-tile-pane {
   filter: brightness(0.6) invert(1) contrast(3) hue-rotate(200deg) saturate(0.3) brightness(0.7);
 }
 
+/* Custom Leaflet popup for dark theme */
 .leaflet-popup-content-wrapper, .leaflet-popup-tip {
     background-color: #1f2937; /* bg-gray-800 */
     color: #f3f4f6; /* text-gray-100 */
@@ -37,14 +37,9 @@ body {
   border-radius: 8px;
   padding: 10px 16px;
 }
-.btn-primary:hover:not(:disabled) {
+.btn-primary:hover {
   background-color: var(--accent-hover);
 }
-.btn-primary:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-}
-
 .btn-secondary {
   background-color: #374151; /* bg-gray-700 */
   color: #f3f4f6; /* text-gray-100 */
@@ -53,14 +48,9 @@ body {
   border-radius: 8px;
   padding: 10px 16px;
 }
-.btn-secondary:hover:not(:disabled) {
+.btn-secondary:hover {
   background-color: #4b5563; /* bg-gray-600 */
 }
-.btn-secondary:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-}
-
 .btn-danger {
     background-color: #dc2626; /* bg-red-600 */
     color: white;
@@ -69,41 +59,26 @@ body {
     border-radius: 8px;
     padding: 10px 16px;
 }
-.btn-danger:hover:not(:disabled) {
-    background-color: #ef4444; /* bg-red-500 */
+.btn-danger:hover {
+    background-color: #b91c1c; /* bg-red-700 */
 }
 
-/* Spot Cards */
+/* Utility to ensure text lines don't break unexpectedly */
+.line-clamp-3 {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    -webkit-line-clamp: 3;
+}
+
+/* The map container is styled in index.html <style> block */
+
+/* Card Styles */
 .spot-card {
-  display: flex;
-  flex-direction: column;
+  /* No specific CSS needed, using Tailwind classes */
 }
 
-/* Activity Feed */
-.activity-item {
-  background: #1f2937;
-  border: 1px solid #374151;
-  margin-bottom: 6px;
-  padding: 8px;
-  border-radius: 8px;
-}
-
-/* Leaderboard, Collections, Achievements, Challenges */
-#leaderboard, #hallOfFame, #globalStats, #profileCollections, #profileAchievements, #challenges {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 16px;
-}
-
-.leader-card, .fame-card, .stat-card, .collection-card, .achievement-card, .challenge-card {
-  /* Tailwind classes handle primary styling in HTML, this ensures correct grid behavior */
-}
-
-/* Responsive adjustment for mobile menu */
-/* This ensures the mobile menu is correctly positioned when toggled */
-@media (max-width: 767px) {
-    #navLinks {
-        right: 1rem;
-        top: 4rem; /* Below the header */
-    }
+/* List/Feed Styles */
+#profileActivity li {
+    /* No specific CSS needed, using Tailwind classes */
 }

@@ -14,8 +14,17 @@ import {
   onSnapshot, 
   updateDoc,
   arrayUnion,
-  arrayRemove
+  arrayRemove,
+  collection,
+  query,
+  getDocs
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+// === EXTERNAL LIBRARIES ===
+// FIX: Leaflet object 'L' is loaded globally by a non-module script in index.html.
+// We grab it from the window scope to ensure access within this module,
+// resolving the 'L.divIcon is not a function' error.
+const L = window.L; 
 
 // === INJECTED FIREBASE CONFIG ===
 // These variables are globally available in the environment.
@@ -33,1057 +42,1398 @@ try {
     db = getFirestore(app);
     auth = getAuth(app);
     console.log("Firebase initialized.");
+    // Set Firestore debug level
+    // setLogLevel('Debug'); // Uncomment for debugging
     
-    // Set Firestore logging level to debug
-    if (typeof firebase.firestore.setLogLevel !== 'undefined') {
-      firebase.firestore.setLogLevel('debug');
-    }
+    // Auth Listener and Sign-in
+    onAuthStateChanged(auth, async (user) => {
+        if (user) {
+            userId = user.uid;
+            console.log("User signed in with UID:", userId);
+            
+            // 1. Load user data from Firestore
+            userDocRef = doc(db, `artifacts/${appId}/users/${userId}/data`, "profile");
+            await loadUserData();
+
+            // 2. Start all real-time listeners and render views
+            startListenersAndRender();
+
+        } else {
+            console.log("User signed out or not authenticated.");
+            // If sign-in failed or user is signed out, use an anonymous session
+            // and a random UUID as fallback, but only Firestore functions
+            // will work for the 'public' path based on security rules.
+            userId = crypto.randomUUID();
+            userDocRef = null;
+            
+            // Still try to render based on static data/local data
+            startListenersAndRender(); 
+        }
+
+        // Only run initial sign-in logic if a token exists and we don't have a user yet
+        if (!user && initialAuthToken) {
+            try {
+                // If custom token exists, sign in
+                await signInWithCustomToken(auth, initialAuthToken);
+                console.log("Signed in with custom token.");
+            } catch (error) {
+                console.error("Custom token sign-in failed. Signing in anonymously.", error);
+                await signInAnonymously(auth);
+            }
+        } else if (!user && !initialAuthToken) {
+            // No custom token, sign in anonymously for a unique userId
+            await signInAnonymously(auth);
+            console.log("Signed in anonymously.");
+        }
+    });
+
 } catch (e) {
-    console.error("Error initializing Firebase:", e);
+    console.error("Firebase initialization failed:", e);
 }
 
-// === APP STATE ===
+
+/* Global App State and Constants */
 let map;
 let markers = [];
 let currentView = "dashboard";
-let userProfile = {
-    favorites: [],
-    collections: {}, // { collectionName: [spotId, ...] }
-    activityFeed: [], // [{ timestamp: ..., type: ..., details: ... }]
-    achievements: [],
-    username: 'Guest'
+let globalUserData = {
+    favorites: [], // spotId array
+    collections: {}, // { name: [spotId, ...] }
+    activityFeed: [], // [{ timestamp, message }]
+    achievements: [], // [achievementId, ...]
+    globalStats: { // Calculated or stored stats
+        jamsVisited: 0,
+        cyphersAttended: 0,
+        uniqueCities: 0,
+        uniqueCountries: 0,
+        totalReviews: 0,
+    }
 };
+
+const STAT_LABELS = {
+    jamsVisited: "Jams Visited",
+    cyphersAttended: "Cyphers Attended",
+    uniqueCities: "Unique Cities",
+    uniqueCountries: "Unique Countries",
+    totalReviews: "Total Reviews",
+};
+
+// Color settings (read from local storage/theme logic)
 let themeColor = localStorage.getItem("themeColor") || "#ff9f1c";
-let statsChartType = localStorage.getItem("statsChartType") || "pie"; // 'pie' or 'bar'
+// Update the :root variable for themeing
+document.documentElement.style.setProperty("--accent", themeColor);
+// A slightly darker hover state for primary buttons
+document.documentElement.style.setProperty("--accent-hover", adjustColor(themeColor, -20));
 
-// --- AUTHENTICATION & PROFILE SETUP ---
 
-// Async function to handle sign-in and listener setup
-async function setupAuthAndProfile() {
-    try {
-        if (initialAuthToken) {
-            await signInWithCustomToken(auth, initialAuthToken);
-        } else {
-            await signInAnonymously(auth);
+/* ====================================
+   DATA & STORAGE (FIREBASE/FIRESTORE)
+   ==================================== */
+
+// Helper to calculate initial stats from current data
+function calculateInitialStats(userData) {
+    const favorites = userData.favorites || [];
+    const visitedSpotIds = new Set(favorites); // Assuming favoriting means "visiting" for stats
+    
+    let stats = {
+        jamsVisited: 0,
+        cyphersAttended: 0,
+        uniqueCities: new Set(),
+        uniqueCountries: new Set(),
+        totalReviews: 0,
+    };
+
+    visitedSpotIds.forEach(id => {
+        const spot = spots.find(s => s.id === id);
+        if (spot) {
+            if (spot.type === 'Jam') {
+                stats.jamsVisited++;
+            } else if (spot.type === 'Cypher Jam') {
+                stats.cyphersAttended++;
+            }
+            stats.uniqueCities.add(spot.city);
+            stats.uniqueCountries.add(spot.country);
         }
-        
-        onAuthStateChanged(auth, (user) => {
-            userUnsubscribe(); // Detach previous listener
+    });
 
-            if (user) {
-                userId = user.uid;
-                // Use the user's ID for their private data path
-                userDocRef = doc(db, 'artifacts', appId, 'users', userId, 'profile', 'data');
-                console.log("User signed in. User ID:", userId);
-
-                // Initialize or fetch user profile data
-                userUnsubscribe = onSnapshot(userDocRef, (docSnap) => {
-                    if (docSnap.exists()) {
-                        userProfile = docSnap.data();
-                        console.log("Profile updated from Firestore:", userProfile);
-                    } else {
-                        // Document doesn't exist, create it with defaults
-                        console.log("User profile not found, creating default.");
-                        userProfile = {
-                            favorites: [],
-                            collections: {},
-                            activityFeed: [{ timestamp: Date.now(), type: 'Welcome', details: 'B-boy/B-girl journey started.' }],
-                            achievements: ['First Login'],
-                            username: `Breaker_${userId.substring(0, 8)}` // Default username
-                        };
-                        setDoc(userDocRef, userProfile).catch(e => console.error("Error setting initial profile:", e));
-                    }
-                    // Always re-render components that rely on userProfile after update
-                    renderProfile();
-                    updateMarkers(spots); // Update map markers based on new favorites
-                }, (error) => {
-                    console.error("Error listening to profile data:", error);
-                });
-            } else {
-                console.log("User signed out or anonymous sign-in failed.");
-                // Fallback for unauthenticated state (should not happen in Canvas environment)
-                userId = crypto.randomUUID(); // Fallback identifier
-                userProfile.username = 'Guest';
-                renderProfile();
+    // Count reviews
+    spots.forEach(spot => {
+        spot.reviews.forEach(review => {
+            // Assuming for a real app, reviews would be linked to the current user's ID
+            // Here, we just count them if a user has favorited the spot.
+            if (favorites.includes(spot.id)) {
+                stats.totalReviews++;
             }
         });
-    } catch (error) {
-        console.error("Authentication Error:", error.code, error.message);
-    }
+    });
+
+    return {
+        jamsVisited: stats.jamsVisited,
+        cyphersAttended: stats.cyphersAttended,
+        uniqueCities: stats.uniqueCities.size,
+        uniqueCountries: stats.uniqueCountries.size,
+        totalReviews: stats.totalReviews,
+    };
 }
 
-// --- FIREBASE WRITE OPERATIONS ---
 
-async function saveUserProfile(updates) {
-    if (!userId || !userDocRef) {
-        console.error("Cannot save: User ID or document reference is not available.");
+/**
+ * Loads user data from Firestore and sets globalUserData.
+ */
+async function loadUserData() {
+    if (!userDocRef) {
+        console.warn("Cannot load user data: userDocRef is null.");
         return;
     }
     try {
-        await updateDoc(userDocRef, updates);
-        console.log("Profile updates saved successfully:", updates);
-    } catch (e) {
-        console.error("Error saving user profile:", e);
-        // If update fails (e.g., initial doc doesn't exist yet, though onSnapshot should handle this), try setDoc
-        if (e.code === 'not-found') {
-             console.warn("Doc not found during update, attempting set...");
-             try {
-                // Merge with existing profile data
-                await setDoc(userDocRef, { ...userProfile, ...updates }, { merge: true });
-                console.log("Profile set/merged successfully.");
-             } catch (e2) {
-                console.error("Critical error: setDoc also failed:", e2);
-             }
+        const docSnap = await getDoc(userDocRef);
+        if (docSnap.exists()) {
+            const data = docSnap.data();
+            console.log("User data loaded from Firestore:", data);
+            globalUserData = {
+                favorites: data.favorites || [],
+                collections: data.collections || {},
+                activityFeed: data.activityFeed || [],
+                achievements: data.achievements || [],
+                globalStats: data.globalStats || calculateInitialStats(data),
+            };
+        } else {
+            // Document does not exist, create it with initial data
+            console.log("No user document found. Creating initial profile.");
+            globalUserData.globalStats = calculateInitialStats(globalUserData);
+            await setDoc(userDocRef, globalUserData);
         }
-    }
-}
-
-function logActivity(details) {
-    const activity = { timestamp: Date.now(), type: 'Action', details: details };
-    saveUserProfile({ activityFeed: arrayUnion(activity) });
-}
-
-// --- DOM READY AND INITIALIZATION ---
-
-document.addEventListener("DOMContentLoaded", async () => {
-    initTheme();
-    await setupAuthAndProfile(); // Start auth and profile listener
-    initMap(); // Initialize map
-    renderSpots(spots); // Render spot cards
-    bindDashboardEvents();
-    bindProfileEvents();
-    bindStoryModeEvents();
-    renderGlobalStats();
-    renderChallenges();
-    renderLeaderboard();
-    renderHallOfFame();
-    
-    // Initial view rendering
-    showView(currentView);
-    // Bind share modal confirmation once
-    document.getElementById('deleteModalConfirmBtn').addEventListener('click', handleDeleteCollection);
-});
-
-// --- UI & VIEW MANAGEMENT ---
-
-function showView(viewId) {
-    currentView = viewId;
-    document.querySelectorAll('.view').forEach(view => {
-        view.classList.add('hidden');
-    });
-    document.getElementById(viewId).classList.remove('hidden');
-
-    // Close mobile menu after navigation
-    const navMenu = document.getElementById('navMenu');
-    if (navMenu && !navMenu.classList.contains('hidden')) {
-        navMenu.classList.add('hidden');
-    }
-
-    // Special map handling
-    if (viewId === 'dashboard') {
-        // Force map redraw/re-centering after container becomes visible
-        setTimeout(() => {
-            if (map) {
-                map.invalidateSize();
-                map.setView([48.8566, 2.3522], 6); // Re-center on Europe
-            }
-        }, 100);
+    } catch (e) {
+        console.error("Error loading user data:", e);
     }
 }
 
 /**
- * Toggles the visibility of the mobile navigation menu.
- * This function is called via the `onclick` attribute of the hamburger button.
+ * Persists current globalUserData to Firestore.
  */
-function toggleMenu() {
-    const navMenu = document.getElementById('navMenu');
-    if (navMenu) {
-        // Toggle the 'hidden' class to show/hide the menu on mobile
-        navMenu.classList.toggle('hidden');
-
-        // Close any open modals when toggling menu to avoid UI clash
-        closeModal('spotModal');
-        closeModal('collectionModal');
-        closeModal('deleteModal');
-        closeModal('reviewModal');
-    } else {
-        console.error("Navigation menu element with ID 'navMenu' not found.");
+async function saveUserData() {
+    if (!userDocRef) {
+        console.warn("Cannot save user data: userDocRef is null.");
+        return;
+    }
+    try {
+        // Recalculate stats before saving
+        globalUserData.globalStats = calculateInitialStats(globalUserData);
+        await setDoc(userDocRef, globalUserData, { merge: true });
+        console.log("User data saved to Firestore.");
+    } catch (e) {
+        console.error("Error saving user data:", e);
     }
 }
 
-// --- THEME ---
+/**
+ * Initializes real-time listener for user profile.
+ */
+function startListenersAndRender() {
+    // Clear previous listener
+    userUnsubscribe(); 
 
-function initTheme() {
-    const root = document.documentElement.style;
-    const picker = document.getElementById("themeColorPicker");
-
-    const applyTheme = (color) => {
-        root.setProperty("--accent", color);
-        // Calculate a slightly darker color for hover effect
-        // Simple heuristic: darken by 10%
-        const hexToRgb = hex => hex.match(/[A-Za-z0-9]{2}/g).map(v => parseInt(v, 16));
-        const rgbToHex = (r, g, b) => '#' + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join('');
-
-        try {
-            let [r, g, b] = hexToRgb(color.substring(1));
-            r = Math.max(0, r - 25);
-            g = Math.max(0, g - 25);
-            b = Math.max(0, b - 25);
-            const darkerColor = rgbToHex(r, g, b);
-            root.setProperty("--accent-hover", darkerColor);
-        } catch (e) {
-            console.error("Theme color parsing failed, using default hover.", e);
-            root.setProperty("--accent-hover", "#ffb24a");
-        }
-    };
-
-    // Apply initial theme
-    applyTheme(themeColor);
-
-    if (picker) {
-        picker.value = themeColor;
-        picker.addEventListener("input", (e) => {
-            themeColor = e.target.value;
-            applyTheme(themeColor);
-            localStorage.setItem("themeColor", themeColor);
-            logActivity(`Changed theme color to ${themeColor}`);
+    if (userDocRef) {
+        // Set up new listener for real-time updates
+        userUnsubscribe = onSnapshot(userDocRef, (docSnap) => {
+            if (docSnap.exists()) {
+                const data = docSnap.data();
+                globalUserData = {
+                    favorites: data.favorites || [],
+                    collections: data.collections || {},
+                    activityFeed: data.activityFeed || [],
+                    achievements: data.achievements || [],
+                    globalStats: data.globalStats || calculateInitialStats(data),
+                };
+                console.log("Real-time profile update received.");
+                renderAllViews();
+            } else {
+                 console.log("User document disappeared. Re-initializing.");
+                 // Re-create the document if it somehow got deleted
+                 saveUserData();
+                 renderAllViews();
+            }
+        }, (error) => {
+            console.error("Firestore listen failed:", error);
         });
+    } else {
+        // If we failed to get a userDocRef (e.g., failed anonymous sign-in, though unlikely)
+        console.warn("No user document reference for listener. Rendering views based on current state.");
+        renderAllViews();
+    }
+    
+    // Also render the map and spots initially based on static data
+    updateMapMarkers(spots);
+}
+
+
+/**
+ * Logs an activity message and saves it to Firestore.
+ * @param {string} message 
+ */
+function logActivity(message) {
+    const activity = {
+        timestamp: Date.now(),
+        message: message
+    };
+    // Use arrayUnion to ensure the activity is only added, not overwritten
+    if (userDocRef) {
+        updateDoc(userDocRef, {
+            activityFeed: arrayUnion(activity)
+        }).then(() => {
+            console.log("Activity logged:", message);
+        }).catch(e => {
+            console.error("Error logging activity:", e);
+        });
+    } else {
+        console.warn("Activity not logged (no userDocRef):", message);
     }
 }
 
-// --- MODALS (Spot Details, Review, Collection Management) ---
+/**
+ * Toggles a spot's favorite status.
+ * @param {string} spotId 
+ */
+function toggleFavorite(spotId) {
+    if (!auth.currentUser) {
+        showCustomAlert("Authentication Required", "Please ensure you are logged in (even anonymously) to use the favorites feature.");
+        return;
+    }
 
-// Modal state
-let currentSpotId = null;
-let currentCollectionName = null;
+    const isFav = globalUserData.favorites.includes(spotId);
+    
+    const updateAction = isFav ? arrayRemove(spotId) : arrayUnion(spotId);
+    const logMsg = isFav ? `Removed ${spotId} from Favorites.` : `Added ${spotId} to Favorites!`;
+    
+    // Perform update on Firestore
+    if (userDocRef) {
+        updateDoc(userDocRef, {
+            favorites: updateAction
+        }).then(() => {
+            logActivity(logMsg);
+            // State will be updated via onSnapshot listener
+        }).catch(e => {
+            console.error("Error toggling favorite:", e);
+            showCustomAlert("Error", "Could not update favorites in the database.");
+        });
+    } else {
+        showCustomAlert("Error", "User profile not ready or not authenticated.");
+    }
+}
 
-function openModal(modalId) {
-    document.getElementById(modalId)?.classList.remove('hidden');
-    document.body.classList.add('overflow-hidden'); // Prevent background scroll
+
+/* ====================================
+   UTILITY FUNCTIONS
+   ==================================== */
+
+/**
+ * Adjusts color brightness (simple implementation).
+ * @param {string} hex - The hex color code.
+ * @param {number} percent - Percentage to lighten (positive) or darken (negative).
+ * @returns {string} New hex color.
+ */
+function adjustColor(hex, percent) {
+    let R = parseInt(hex.substring(1, 3), 16);
+    let G = parseInt(hex.substring(3, 5), 16);
+    let B = parseInt(hex.substring(5, 7), 16);
+
+    R = Math.min(255, R + Math.floor(R * (percent / 100)));
+    G = Math.min(255, G + Math.floor(G * (percent / 100)));
+    B = Math.min(255, B + Math.floor(B * (percent / 100)));
+
+    const toHex = (c) => c.toString(16).padStart(2, '0');
+
+    return `#${toHex(R)}${toHex(G)}${toHex(B)}`;
+}
+
+/**
+ * Custom alert/modal system (replaces browser alerts).
+ * @param {string} title 
+ * @param {string} message 
+ */
+function showCustomAlert(title, message) {
+    const alertModal = document.getElementById('alertModal');
+    if (!alertModal) return; // Guard against missing modal
+
+    document.getElementById('alertModalTitle').textContent = title;
+    document.getElementById('alertModalMessage').textContent = message;
+    alertModal.classList.remove('hidden');
+    alertModal.classList.add('flex'); // Show the modal
 }
 
 function closeModal(modalId) {
-    document.getElementById(modalId)?.classList.add('hidden');
-    document.body.classList.remove('overflow-hidden');
-    // Clear dynamic content on close if needed
-    if (modalId === 'spotModal') {
-        currentSpotId = null;
-    } else if (modalId === 'deleteModal') {
-        currentCollectionName = null;
+    const modal = document.getElementById(modalId);
+    if (modal) {
+        modal.classList.remove('flex');
+        modal.classList.add('hidden'); // Hide the modal
     }
 }
 
-// --- SPOT DETAILS MODAL ---
-
-function showSpotDetails(spotId) {
-    const spot = spots.find(s => s.id === spotId);
-    if (!spot) {
-        console.error('Spot not found:', spotId);
-        return;
-    }
-
-    currentSpotId = spotId;
-
-    document.getElementById('spotModalName').textContent = spot.name;
-    document.getElementById('spotModalImage').src = spot.image;
-    document.getElementById('spotModalImage').alt = spot.name;
-    document.getElementById('spotModalType').textContent = spot.type;
-    document.getElementById('spotModalLocation').textContent = `${spot.city}, ${spot.country}`;
-    document.getElementById('spotModalAbout').textContent = spot.about;
-    document.getElementById('spotModalCrew').textContent = spot.crew;
-
-    // Favorite button state
-    const isFavorite = userProfile.favorites.includes(spotId);
-    const favBtn = document.getElementById('favoriteBtn');
-    favBtn.textContent = isFavorite ? 'Remove from Favorites' : 'Add to Favorites';
-    favBtn.classList.toggle('btn-secondary', isFavorite);
-    favBtn.classList.toggle('btn-primary', !isFavorite);
-    favBtn.onclick = () => toggleFavorite(spotId);
-
-    // Collection dropdown
-    const collectionSelect = document.getElementById('collectionSelect');
-    collectionSelect.innerHTML = '<option value="">Select a Collection</option>';
-    Object.keys(userProfile.collections).forEach(name => {
-        const option = document.createElement('option');
-        option.value = name;
-        option.textContent = name;
-        collectionSelect.appendChild(option);
-    });
-
-    // Share button
-    document.getElementById('shareSpotBtn').onclick = () => shareSpot(spot);
-
-    // Reviews
-    renderReviews(spot.reviews);
-    document.getElementById('openReviewModalBtn').onclick = () => openReviewModal(spotId);
-
-    openModal('spotModal');
+/**
+ * Finds a spot by ID.
+ * @param {string} id 
+ * @returns {object|undefined}
+ */
+function findSpot(id) {
+    return spots.find(spot => spot.id === id);
 }
 
-function renderReviews(reviews) {
-    const reviewsList = document.getElementById('spotModalReviews');
-    reviewsList.innerHTML = '';
+/**
+ * Creates a star rating HTML string.
+ * @param {number} rating - The rating value (e.g., 4.5).
+ * @returns {string} HTML string of star icons.
+ */
+function createStarRating(rating) {
+    const maxRating = 5;
+    let stars = '';
+    const fullStar = `<i data-lucide="star" class="w-4 h-4 text-yellow-400 fill-yellow-400"></i>`;
+    const halfStar = `<i data-lucide="star-half" class="w-4 h-4 text-yellow-400 fill-yellow-400"></i>`;
+    const emptyStar = `<i data-lucide="star" class="w-4 h-4 text-gray-600"></i>`;
 
-    if (reviews.length === 0) {
-        reviewsList.innerHTML = '<p class="text-gray-400 italic">No reviews yet. Be the first!</p>';
-        return;
-    }
-
-    // Sort by most recent (assuming reviews don't have a timestamp, sorting by index is simplest)
-    reviews.slice().reverse().forEach(review => {
-        const li = document.createElement('li');
-        li.className = 'p-3 bg-gray-700 rounded-lg mb-2';
-        li.innerHTML = `
-            <div class="flex justify-between items-center mb-1">
-                <span class="font-semibold">${review.username || 'Anonymous'}</span>
-                <span class="text-yellow-400">${'★'.repeat(review.rating)}${'☆'.repeat(5 - review.rating)}</span>
-            </div>
-            <p class="text-sm">${review.text}</p>
-        `;
-        reviewsList.appendChild(li);
-    });
-}
-
-// --- FAVORITE/COLLECTION LOGIC ---
-
-function toggleFavorite(spotId) {
-    if (userProfile.favorites.includes(spotId)) {
-        // Remove
-        userProfile.favorites = userProfile.favorites.filter(id => id !== spotId);
-        logActivity(`Removed ${spots.find(s => s.id === spotId).name} from favorites`);
-    } else {
-        // Add
-        userProfile.favorites.push(spotId);
-        logActivity(`Added ${spots.find(s => s.id === spotId).name} to favorites`);
-    }
-    saveUserProfile({ favorites: userProfile.favorites });
-    // Update button text immediately
-    document.getElementById('favoriteBtn').textContent = userProfile.favorites.includes(spotId) ? 'Remove from Favorites' : 'Add to Favorites';
-}
-
-// Event handler for adding a spot to a collection via the dropdown
-document.getElementById('collectionSelect')?.addEventListener('change', (e) => {
-    const collectionName = e.target.value;
-    if (collectionName && currentSpotId) {
-        // Check if spot is already in the collection
-        if (!(userProfile.collections[collectionName] || []).includes(currentSpotId)) {
-            // Add the spot to the collection array
-            const newCollections = {
-                ...userProfile.collections,
-                [collectionName]: [...(userProfile.collections[collectionName] || []), currentSpotId]
-            };
-            saveUserProfile({ collections: newCollections });
-            logActivity(`Added ${spots.find(s => s.id === currentSpotId).name} to collection "${collectionName}"`);
+    for (let i = 1; i <= maxRating; i++) {
+        if (rating >= i) {
+            stars += fullStar;
+        } else if (rating > i - 1 && rating < i) {
+            stars += halfStar;
+        } else {
+            stars += emptyStar;
         }
-        // Reset the dropdown after selection
-        e.target.value = '';
     }
-});
-
-// --- USER REVIEWS ---
-
-function openReviewModal(spotId) {
-    const spot = spots.find(s => s.id === spotId);
-    if (!spot) return;
-
-    document.getElementById('reviewModalSpotName').textContent = spot.name;
-    document.getElementById('reviewRating').value = 5;
-    document.getElementById('reviewText').value = '';
-
-    // Set up the submission handler
-    document.getElementById('submitReviewBtn').onclick = () => submitReview(spotId);
-
-    closeModal('spotModal'); // Close spot details before opening review
-    openModal('reviewModal');
+    // Feather icons need to be dynamically replaced, so we use lucide icons which are similar
+    // We will call lucide.createIcons() after updating the DOM.
+    return `<span class="flex items-center space-x-0.5">${stars}</span>`;
 }
 
-function submitReview(spotId) {
-    const rating = parseInt(document.getElementById('reviewRating').value);
-    const text = document.getElementById('reviewText').value.trim();
-    const spot = spots.find(s => s.id === spotId);
+/**
+ * Formats a timestamp into a readable date/time string.
+ * @param {number} timestamp - Milliseconds since epoch.
+ * @returns {string} Formatted date/time.
+ */
+function formatTimestamp(timestamp) {
+    return new Date(timestamp).toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+}
 
-    if (!spot || !rating || text.length === 0) {
-        console.error("Invalid review data.");
+
+/* ====================================
+   VIEW & DOM RENDERING LOGIC
+   ==================================== */
+
+/**
+ * Shows the requested view and hides all others.
+ * @param {string} viewId - The ID of the view to show (e.g., 'dashboard').
+ */
+function showView(viewId) {
+    currentView = viewId;
+    document.querySelectorAll('.view').forEach(view => {
+        view.style.display = 'none';
+    });
+    const activeView = document.getElementById(viewId);
+    if (activeView) {
+        activeView.style.display = 'block';
+    }
+    // Close the mobile menu on view change
+    document.getElementById('navLinks').classList.remove('flex'); 
+    document.getElementById('navLinks').classList.add('hidden'); // Ensure it is hidden
+
+    // Re-render the map view on switch to ensure it initializes correctly
+    if (viewId === 'dashboard') {
+        if (map) {
+            setTimeout(() => { // Small delay often needed for Leaflet to recalculate size
+                map.invalidateSize(); 
+                updateMapMarkers(spots); // Refresh markers
+            }, 50);
+        } else {
+            initMap();
+        }
+    }
+}
+
+/**
+ * Renders all dynamic sections of the app (called after any state update).
+ */
+function renderAllViews() {
+    renderSpots(spots); // Re-renders the map and the card grid
+    renderProfile();
+    renderLeaderboard();
+    renderHallOfFame();
+    renderGlobalStats();
+    renderChallenges();
+}
+
+/**
+ * Creates the HTML content for a single spot card.
+ * @param {object} spot 
+ * @returns {string} HTML string.
+ */
+function createSpotCard(spot) {
+    const isFavorite = globalUserData.favorites.includes(spot.id);
+    const favClass = isFavorite ? 'text-red-500 fill-red-500' : 'text-gray-400';
+    const avgRating = spot.reviews.length > 0
+        ? (spot.reviews.reduce((sum, r) => sum + r.rating, 0) / spot.reviews.length).toFixed(1)
+        : 'N/A';
+
+    return `
+        <div class="spot-card bg-gray-800 rounded-xl shadow-lg overflow-hidden border border-gray-700 transition hover:shadow-2xl">
+            <div class="h-40 overflow-hidden relative">
+                <img src="${spot.image}" alt="${spot.name}" class="w-full h-full object-cover" onerror="this.onerror=null;this.src='https://placehold.co/800x500/1f2937/d1d5db?text=Image+Not+Found';" />
+                <span class="absolute top-2 left-2 px-3 py-1 bg-gray-900/70 text-sm font-semibold rounded-full text-white">${spot.type}</span>
+            </div>
+            <div class="p-4 space-y-3">
+                <h3 class="text-xl font-bold text-white">${spot.name}</h3>
+                <p class="text-gray-400 text-sm">${spot.city}, ${spot.country}</p>
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center space-x-1 text-sm">
+                        ${createStarRating(parseFloat(avgRating) || 0)}
+                        <span class="font-semibold text-yellow-400">${avgRating}</span>
+                        <span class="text-gray-500">(${spot.reviews.length} reviews)</span>
+                    </div>
+                    <button 
+                        class="p-2 rounded-full hover:bg-gray-700 transition"
+                        onclick="toggleFavorite('${spot.id}')"
+                        aria-label="Toggle Favorite"
+                    >
+                        <i data-lucide="heart" class="w-5 h-5 ${favClass}"></i>
+                    </button>
+                </div>
+                <p class="text-gray-300 text-sm line-clamp-2">${spot.about}</p>
+                <button 
+                    onclick="openSpotModal('${spot.id}')" 
+                    class="btn-primary w-full text-sm mt-3"
+                >
+                    View Details
+                </button>
+            </div>
+        </div>
+    `;
+}
+
+/**
+ * Renders the full list of spot cards based on the search/filter criteria.
+ * @param {Array<object>} spotList 
+ */
+function renderSpots(spotList) {
+    const gridElement = document.getElementById('spotsGrid');
+    if (!gridElement) return;
+
+    const query = document.getElementById('searchBar')?.value.toLowerCase() || '';
+    const filteredSpots = spotList.filter(spot => 
+        spot.name.toLowerCase().includes(query) ||
+        spot.city.toLowerCase().includes(query) ||
+        spot.country.toLowerCase().includes(query) ||
+        spot.type.toLowerCase().includes(query)
+    );
+
+    gridElement.innerHTML = filteredSpots.map(createSpotCard).join('');
+    
+    // Important: Render Lucide icons after DOM update
+    lucide.createIcons(); 
+    
+    // Update map markers to match the filtered list
+    updateMapMarkers(filteredSpots);
+}
+
+
+/* ====================================
+   MAP LOGIC (LEAFLET)
+   ==================================== */
+
+/**
+ * Initializes the Leaflet map.
+ */
+function initMap() {
+    if (map) {
+        map.remove(); // Clear previous map instance if exists
+    }
+    
+    // Check if L and L.map are available
+    if (L && typeof L.map === 'function') {
+        map = L.map('map').setView([45.0, 10.0], 5); 
+
+        // Add a dark theme tile layer
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+            subdomains: 'abcd',
+            maxZoom: 19
+        }).addTo(map);
+
+        console.log("Leaflet map initialized successfully.");
+    } else {
+        console.error("Leaflet (L) not available. Map initialization failed.");
+        // Hide map container or show a fallback message
+        document.getElementById('map').innerHTML = '<div class="text-center p-8 text-red-400">Map library not loaded. Check console for details.</div>';
+    }
+}
+
+/**
+ * Creates the HTML content for a Leaflet popup.
+ * @param {object} spot 
+ * @returns {string} HTML string.
+ */
+function createPopupContent(spot) {
+    const isFavorite = globalUserData.favorites.includes(spot.id);
+    const favBtnText = isFavorite ? 'Remove from Favorites' : 'Add to Favorites';
+    const favBtnClass = isFavorite ? 'btn-secondary' : 'btn-primary';
+
+    return `
+        <div class="space-y-3 p-2 w-72">
+            <h4 class="text-xl font-bold">${spot.name}</h4>
+            <p class="text-sm text-gray-400">${spot.city}, ${spot.country}</p>
+            <p class="text-md font-semibold text-yellow-400">${spot.type}</p>
+            <p class="text-sm">${spot.about}</p>
+            <button onclick="toggleFavorite('${spot.id}')" class="${favBtnClass} text-sm w-full">${favBtnText}</button>
+            <button onclick="openSpotModal('${spot.id}')" class="btn-secondary text-sm w-full">View Details</button>
+        </div>
+    `;
+}
+
+/**
+ * Updates or creates map markers for the given list of spots.
+ * @param {Array<object>} spotsToRender 
+ */
+function updateMapMarkers(spotsToRender) {
+    // Defensive check: Only proceed if L and its required functions are ready
+    if (!L || typeof L.divIcon !== 'function' || !map) {
+        console.error("Leaflet core functions not ready for markers. (L.divIcon missing)");
         return;
     }
-
-    const newReview = {
-        rating: rating,
-        text: text,
-        username: userProfile.username // Associate review with username
-    };
-
-    // The spots array is static, so we're faking persistence by updating the in-memory object,
-    // which is not ideal but works for this single-file app structure without a full backend for spots.
-    // In a real app, this would be an API call to update the spot data.
-    spot.reviews.push(newReview);
-
-    logActivity(`Reviewed ${spot.name} with ${rating} stars.`);
-
-    closeModal('reviewModal');
-    showSpotDetails(spotId); // Re-open details modal to show new review
-}
-
-// --- MAP RENDERING ---
-
-function initMap() {
-    if (map) map.remove(); // Clean up existing map if re-initializing
-
-    // Initialize map centered on a good starting point (e.g., Central Europe)
-    map = L.map('map').setView([48.8566, 2.3522], 6); 
-
-    // Dark-mode friendly tiles (Stamen Toner Lite or similar inverted)
-    L.tileLayer('https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png', {
-        maxZoom: 20,
-        attribution: '&copy; <a href="https://stadiamaps.com/">Stadia Maps</a>, &copy; <a href="https://openmaptiles.org/">OpenMapTiles</a> &copy; <a href="http://openstreetmap.org">OpenStreetMap</a> contributors'
-    }).addTo(map);
-
-    updateMarkers(spots);
-}
-
-function updateMarkers(spotList) {
+    
     // Clear existing markers
     markers.forEach(marker => marker.remove());
     markers = [];
 
-    spotList.forEach(spot => {
-        // Create a custom icon (using a simple colored marker for favorites)
-        const isFavorite = userProfile.favorites.includes(spot.id);
-        const iconHtml = `<div class="marker-pin ${isFavorite ? 'favorite-marker' : 'regular-marker'}" style="background-color: ${isFavorite ? 'var(--accent)' : '#4b5563'};"></div>`;
+    spotsToRender.forEach(spot => {
+        // Customize icon based on type
+        const typeClass = spot.type.toLowerCase().replace(/\s+/g, '-');
+        let iconHtml = `<div class="marker-pin ${typeClass}"></div>`;
         
-        const customIcon = L.divIcon({
+        // Add an icon based on type
+        if (spot.type === 'Jam') {
+            iconHtml += `<i data-lucide="zap" class="w-5 h-5 text-white"></i>`;
+        } else if (spot.type === 'Cypher Jam') {
+            iconHtml += `<i data-lucide="users" class="w-5 h-5 text-white"></i>`;
+        } else if (spot.type === 'Training') {
+            iconHtml += `<i data-lucide="dumbbell" class="w-5 h-5 text-white"></i>`;
+        } else {
+             iconHtml += `<i data-lucide="map-pin" class="w-5 h-5 text-white"></i>`;
+        }
+
+
+        const icon = L.divIcon({
             className: 'custom-div-icon',
-            html: iconHtml,
-            iconSize: [20, 20],
-            iconAnchor: [10, 10]
+            html: `<div class="marker-container">${iconHtml}</div>`,
+            iconSize: [36, 36],
+            iconAnchor: [18, 18] // Center the icon
         });
 
-        const marker = L.marker([spot.lat, spot.lng], { icon: customIcon })
+        const marker = L.marker([spot.lat, spot.lng], { icon: icon })
             .addTo(map)
-            .bindPopup(`<b>${spot.name}</b><br>${spot.city}, ${spot.country}`)
-            .on('click', () => showSpotDetails(spot.id)); // Open modal on click
+            .bindPopup(createPopupContent(spot), { className: 'custom-popup' });
 
         markers.push(marker);
     });
-}
-
-// --- CARD RENDERING AND FILTERING ---
-
-function renderSpots(spotList) {
-    const container = document.getElementById('spotCards');
-    if (!container) return;
-
-    container.innerHTML = '';
     
-    // Sort spots: Favorites first, then alphabetically
-    spotList.sort((a, b) => {
-        const aFav = userProfile.favorites.includes(a.id);
-        const bFav = userProfile.favorites.includes(b.id);
-        if (aFav && !bFav) return -1;
-        if (!aFav && bFav) return 1;
-        return a.name.localeCompare(b.name);
-    });
+    // Important: Render Lucide icons inside the markers after DOM update
+    // For simplicity, we call it globally here.
+    lucide.createIcons();
+}
 
-    spotList.forEach(spot => {
-        const isFavorite = userProfile.favorites.includes(spot.id);
-        const card = document.createElement('div');
-        card.className = 'spot-card p-4 bg-gray-800 rounded-xl shadow-lg border border-gray-700 hover:border-accent transition duration-300 cursor-pointer';
-        card.innerHTML = `
-            <img src="${spot.image}" alt="${spot.name}" class="w-full h-32 object-cover rounded-lg mb-3">
-            <h3 class="text-xl font-semibold mb-1">${spot.name}</h3>
-            <p class="text-sm text-gray-400 mb-2">${spot.city}, ${spot.country} • ${spot.type}</p>
-            <div class="flex justify-between items-center">
-                <span class="text-yellow-400 text-lg">${'★'.repeat(Math.round(spot.reviews.reduce((sum, r) => sum + r.rating, 0) / spot.reviews.length || 0))}${'☆'.repeat(5 - Math.round(spot.reviews.reduce((sum, r) => sum + r.rating, 0) / spot.reviews.length || 0))}</span>
-                <span class="text-gray-400 text-xs">${isFavorite ? '<i data-lucide="heart" class="w-4 h-4 fill-accent stroke-none inline-block"></i>' : ''}</span>
+/**
+ * Opens the detailed spot modal.
+ * @param {string} spotId 
+ */
+function openSpotModal(spotId) {
+    const spot = findSpot(spotId);
+    if (!spot) return;
+
+    const modal = document.getElementById('spotDetailModal');
+    if (!modal) return;
+
+    // Set content
+    document.getElementById('modalImage').src = spot.image;
+    document.getElementById('modalSpotName').textContent = spot.name;
+    document.getElementById('modalSpotLocation').textContent = `${spot.city}, ${spot.country}`;
+    document.getElementById('modalSpotType').textContent = spot.type;
+    document.getElementById('modalSpotAbout').textContent = spot.about;
+    document.getElementById('modalToggleFavoriteBtn').onclick = () => toggleFavorite(spot.id);
+    document.getElementById('modalShareBtn').onclick = () => shareSpot(spot.id);
+    document.getElementById('modalAddCollectionBtn').onclick = () => openCollectionModal(spot.id);
+    
+    // Render reviews
+    const reviewsHtml = spot.reviews.map(review => `
+        <div class="bg-gray-700/50 p-3 rounded-lg space-y-1">
+            <div class="flex items-center space-x-2">
+                ${createStarRating(review.rating)}
+                <span class="text-sm font-semibold">${review.rating.toFixed(1)}/5</span>
             </div>
-        `;
-        card.onclick = () => showSpotDetails(spot.id);
-        container.appendChild(card);
-    });
+            <p class="text-sm text-gray-300">${review.text}</p>
+        </div>
+    `).join('');
+    document.getElementById('modalReviews').innerHTML = reviewsHtml || '<p class="text-gray-400">No reviews yet.</p>';
+    
+    // Update favorite button text/icon
+    const isFavorite = globalUserData.favorites.includes(spot.id);
+    document.getElementById('modalToggleFavoriteBtn').innerHTML = `
+        <i data-lucide="heart" class="w-5 h-5 ${isFavorite ? 'text-red-500 fill-red-500' : 'text-gray-400'}"></i>
+        <span>${isFavorite ? 'Remove from Favorites' : 'Add to Favorites'}</span>
+    `;
 
-    // Re-render Lucide icons if any were added dynamically
-    if (typeof lucide !== 'undefined' && lucide.createIcons) {
-        lucide.createIcons();
-    }
+    // Show modal
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+    
+    lucide.createIcons(); // Re-render Lucide icons
 }
 
-function filterSpots() {
-    const query = document.getElementById('searchQuery').value.toLowerCase();
-    const typeFilter = document.getElementById('typeFilter').value;
-    const isFavoriteFilter = document.getElementById('favoriteFilter').checked;
+/* ====================================
+   DASHBOARD / FILTER LOGIC
+   ==================================== */
 
-    const filteredSpots = spots.filter(spot => {
-        const matchesQuery = spot.name.toLowerCase().includes(query) ||
-                             spot.city.toLowerCase().includes(query) ||
-                             spot.country.toLowerCase().includes(query);
-
-        const matchesType = typeFilter === '' || spot.type === typeFilter;
-        
-        const matchesFavorite = !isFavoriteFilter || userProfile.favorites.includes(spot.id);
-
-        return matchesQuery && matchesType && matchesFavorite;
-    });
-
-    renderSpots(filteredSpots);
-    updateMarkers(filteredSpots);
-}
-
+/**
+ * Binds search and filter events for the dashboard.
+ */
 function bindDashboardEvents() {
-    document.getElementById('searchQuery')?.addEventListener('input', filterSpots);
-    document.getElementById('typeFilter')?.addEventListener('change', filterSpots);
-    document.getElementById('favoriteFilter')?.addEventListener('change', filterSpots);
-    document.getElementById('toggleChartBtn')?.addEventListener('click', toggleChartType);
+    const searchBar = document.getElementById('searchBar');
+    if (searchBar) {
+        searchBar.addEventListener('input', () => renderSpots(spots));
+    }
 }
 
-// --- PROFILE RENDERING AND MANAGEMENT ---
 
+/* ====================================
+   PROFILE VIEW RENDERING
+   ==================================== */
+
+/**
+ * Renders the full profile view content.
+ */
 function renderProfile() {
-    // Basic User Info
-    document.getElementById('profileUsername').textContent = userProfile.username;
-    document.getElementById('profileUserId').textContent = `ID: ${userId || 'N/A'}`;
-    document.getElementById('editUsernameInput').value = userProfile.username;
-
-    // Stats Chart
-    const statsCanvas = document.getElementById('statsChart');
-    if (statsCanvas) {
-        drawStatsChart(statsCanvas, statsChartType === 'pie');
+    // 1. Render User ID
+    document.getElementById('profileUserId').textContent = userId || 'Loading...';
+    
+    // 2. Render Activity Feed
+    const activityList = document.getElementById('profileActivity');
+    if (activityList) {
+        // Sort activity by timestamp descending
+        const sortedActivity = [...globalUserData.activityFeed].sort((a, b) => b.timestamp - a.timestamp);
+        activityList.innerHTML = sortedActivity.map(activity => `
+            <li class="p-3 bg-gray-800 rounded-lg text-sm flex justify-between items-center border border-gray-700">
+                <span class="text-gray-300">${activity.message}</span>
+                <span class="text-xs text-gray-500">${formatTimestamp(activity.timestamp)}</span>
+            </li>
+        `).join('');
     }
 
-    // Favorites Count
-    document.getElementById('favoritesCount').textContent = userProfile.favorites.length;
+    // 3. Render Favorites Grid
+    const favoritesGrid = document.getElementById('profileFavoritesGrid');
+    if (favoritesGrid) {
+        const favoriteSpots = spots.filter(spot => globalUserData.favorites.includes(spot.id));
+        favoritesGrid.innerHTML = favoriteSpots.map(createSpotCard).join('');
+        lucide.createIcons();
+    }
     
-    // Collections
-    renderProfileCollections();
+    // 4. Render Collections
+    renderCollections();
+    
+    // 5. Render Achievements
+    renderAchievements();
 
-    // Activity Feed
-    renderProfileActivity();
-
-    // Achievements (part of static rendering now, only for display)
-    renderProfileAchievements();
+    // 6. Update Stats/Charts (Handled by renderGlobalStats/renderChallenges below)
 }
 
-function renderProfileCollections() {
+/**
+ * Renders collections (used in both profile and modal).
+ */
+function renderCollections() {
     const container = document.getElementById('profileCollections');
-    if (!container) return;
-
-    container.innerHTML = '';
-    const collectionNames = Object.keys(userProfile.collections);
-
-    if (collectionNames.length === 0) {
-        container.innerHTML = '<p class="col-span-full text-gray-400">No collections created yet. Start organizing your spots!</p>';
-    }
-
-    collectionNames.forEach(name => {
-        const spotIds = userProfile.collections[name];
-        const count = spotIds.length;
-        const card = document.createElement('div');
-        card.className = 'collection-card p-4 bg-gray-800 rounded-xl border border-gray-700 shadow-lg';
-        card.innerHTML = `
-            <div class="flex justify-between items-start">
-                <div>
-                    <h4 class="text-lg font-semibold truncate">${name}</h4>
-                    <p class="text-sm text-gray-400">${count} spot${count !== 1 ? 's' : ''}</p>
+    const collectionNames = Object.keys(globalUserData.collections);
+    
+    if (container) {
+        container.innerHTML = collectionNames.map(name => {
+            const spotIds = globalUserData.collections[name];
+            const count = spotIds.length;
+            
+            // Get the first spot's image for a visual
+            const firstSpotId = spotIds[0];
+            const firstSpot = firstSpotId ? findSpot(firstSpotId) : null;
+            const imageUrl = firstSpot ? firstSpot.image : 'https://placehold.co/400x200/4b5563/d1d5db?text=Empty+Collection';
+            
+            return `
+                <div class="collection-card bg-gray-800 rounded-xl shadow-lg border border-gray-700 relative overflow-hidden">
+                    <div class="h-24 w-full bg-cover bg-center" style="background-image: url('${imageUrl}');"></div>
+                    <div class="p-4 space-y-2">
+                        <h4 class="text-lg font-bold text-white line-clamp-1">${name}</h4>
+                        <p class="text-sm text-gray-400">${count} spot${count === 1 ? '' : 's'}</p>
+                        <div class="flex space-x-2">
+                            <button onclick="viewCollection('${name}')" class="btn-primary flex-1 text-sm">View</button>
+                            <button onclick="openDeleteModal('${name}')" class="p-2 text-gray-400 hover:text-red-500 transition" aria-label="Delete Collection">
+                                <i data-lucide="trash-2" class="w-5 h-5"></i>
+                            </button>
+                        </div>
+                    </div>
                 </div>
-                <button class="text-red-400 hover:text-red-500 transition" onclick="openDeleteCollectionModal('${name}')">
-                    <i data-lucide="trash-2" class="w-4 h-4"></i>
-                </button>
-            </div>
-            ${count > 0 ? `
-            <div class="mt-3 flex -space-x-2 overflow-hidden">
-                ${spotIds.slice(0, 3).map(id => {
-                    const spot = spots.find(s => s.id === id);
-                    return spot ? `<img src="${spot.image}" alt="${spot.name}" class="inline-block h-8 w-8 rounded-full ring-2 ring-gray-900 object-cover" title="${spot.name}">` : '';
-                }).join('')}
-                ${count > 3 ? `<span class="inline-block h-8 w-8 rounded-full ring-2 ring-gray-900 bg-gray-600 flex items-center justify-center text-xs">+${count - 3}</span>` : ''}
-            </div>` : ''}
-        `;
-        // Make the card clickable to show the spots
-        card.onclick = (e) => {
-            // Only navigate if trash button wasn't clicked
-            if (!e.target.closest('button')) {
-                showCollectionSpots(name, spotIds);
-            }
-        };
-        container.appendChild(card);
-    });
-
-    // Re-render Lucide icons
-    if (typeof lucide !== 'undefined' && lucide.createIcons) {
+            `;
+        }).join('');
         lucide.createIcons();
     }
 }
 
-function showCollectionSpots(name, spotIds) {
-    // Filter the global spots array down to the collection members
-    const collectionSpots = spots.filter(s => spotIds.includes(s.id));
+/**
+ * Opens the modal for adding a spot to a collection.
+ * @param {string} spotId - The ID of the spot to add.
+ */
+function openCollectionModal(spotId) {
+    const modal = document.getElementById('collectionModal');
+    const list = document.getElementById('collectionList');
+    const createInput = document.getElementById('newCollectionName');
+    const createBtn = document.getElementById('createCollectionBtn');
     
-    // Switch to dashboard view and render only these spots
-    showView('dashboard');
-    document.getElementById('dashboardTitle').textContent = `Viewing Collection: ${name}`;
-    renderSpots(collectionSpots);
-    updateMarkers(collectionSpots);
+    if (!modal || !list || !createInput || !createBtn) return;
     
-    // Show a "Back to All Spots" button
-    let backBtn = document.getElementById('backToAllSpots');
-    if (!backBtn) {
-        backBtn = document.createElement('button');
-        backBtn.id = 'backToAllSpots';
-        backBtn.className = 'btn-secondary text-sm ml-4';
-        document.getElementById('dashboardControls').appendChild(backBtn);
-    }
-    backBtn.textContent = `← Back to All Spots`;
-    backBtn.classList.remove('hidden');
-    backBtn.onclick = () => {
-        document.getElementById('dashboardTitle').textContent = `Explore BreakAtlas`;
-        renderSpots(spots); // Render all spots
-        updateMarkers(spots); // Update markers to all spots
-        backBtn.classList.add('hidden');
-    };
+    // Clear previous state
+    createInput.value = '';
+    
+    const collectionNames = Object.keys(globalUserData.collections);
+    
+    list.innerHTML = collectionNames.map(name => {
+        const spotIds = globalUserData.collections[name];
+        const isInCollection = spotIds.includes(spotId);
+        
+        return `
+            <li class="flex justify-between items-center p-2 bg-gray-700/50 rounded-lg">
+                <span class="text-gray-300">${name} (${spotIds.length} spots)</span>
+                <button 
+                    onclick="toggleSpotInCollection('${name}', '${spotId}')" 
+                    class="btn-primary text-xs px-3 py-1 ${isInCollection ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'}"
+                >
+                    ${isInCollection ? 'Remove' : 'Add'}
+                </button>
+            </li>
+        `;
+    }).join('') || '<p class="text-gray-400 p-2">No collections yet. Create one below!</p>';
+    
+    // Set up create button handler (needs to be inside this function to capture spotId)
+    createBtn.onclick = () => createCollection(createInput.value, spotId);
+
+    // Show modal
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
 }
 
-
-function renderProfileActivity() {
-    const list = document.getElementById('profileActivity');
-    if (!list) return;
-
-    list.innerHTML = '';
-    // Sort descending by timestamp and limit to 10
-    const recentActivity = userProfile.activityFeed
-        .slice()
-        .sort((a, b) => b.timestamp - a.timestamp)
-        .slice(0, 10);
-
-    if (recentActivity.length === 0) {
-        list.innerHTML = '<li class="text-gray-400 italic">No recent activity. Get out there!</li>';
+/**
+ * Creates a new collection and adds a spot to it.
+ * @param {string} name 
+ * @param {string} spotId 
+ */
+function createCollection(name, spotId) {
+    name = name.trim();
+    if (!name) {
+        showCustomAlert("Error", "Collection name cannot be empty.");
+        return;
+    }
+    if (globalUserData.collections[name]) {
+        showCustomAlert("Error", "A collection with this name already exists.");
         return;
     }
 
-    recentActivity.forEach(activity => {
-        const li = document.createElement('li');
-        li.className = 'activity-item p-3 bg-gray-800 rounded-lg border border-gray-700 mb-2 text-sm';
-        const date = new Date(activity.timestamp).toLocaleDateString();
-        li.innerHTML = `<span class="font-bold text-accent">[${activity.type}]</span> ${activity.details} <span class="text-gray-500 float-right">${date}</span>`;
-        list.appendChild(li);
-    });
+    const newCollections = { ...globalUserData.collections, [name]: [spotId] };
+    
+    if (userDocRef) {
+        updateDoc(userDocRef, {
+            collections: newCollections
+        }).then(() => {
+            logActivity(`Created new collection: ${name} and added spot.`);
+            closeModal('collectionModal');
+        }).catch(e => {
+            console.error("Error creating collection:", e);
+            showCustomAlert("Error", "Could not create collection in the database.");
+        });
+    } else {
+         showCustomAlert("Error", "User profile not ready or not authenticated.");
+    }
 }
 
-function renderProfileAchievements() {
+/**
+ * Toggles a spot's presence in a specific collection.
+ * @param {string} collectionName 
+ * @param {string} spotId 
+ */
+function toggleSpotInCollection(collectionName, spotId) {
+    const spotIds = globalUserData.collections[collectionName] || [];
+    const isPresent = spotIds.includes(spotId);
+    let newSpotIds;
+
+    if (isPresent) {
+        newSpotIds = spotIds.filter(id => id !== spotId);
+    } else {
+        newSpotIds = [...spotIds, spotId];
+    }
+
+    const newCollections = { ...globalUserData.collections, [collectionName]: newSpotIds };
+    
+    if (userDocRef) {
+        updateDoc(userDocRef, {
+            collections: newCollections
+        }).then(() => {
+            const logMsg = isPresent 
+                ? `Removed spot from collection: ${collectionName}` 
+                : `Added spot to collection: ${collectionName}`;
+            logActivity(logMsg);
+            // Re-open modal to reflect changes
+            openCollectionModal(spotId); 
+        }).catch(e => {
+            console.error("Error toggling spot in collection:", e);
+            showCustomAlert("Error", "Could not update collection in the database.");
+        });
+    } else {
+         showCustomAlert("Error", "User profile not ready or not authenticated.");
+    }
+}
+
+/**
+ * Opens the delete confirmation modal for a collection.
+ * @param {string} collectionName 
+ */
+function openDeleteModal(collectionName) {
+    const modal = document.getElementById('deleteModal');
+    const nameSpan = document.getElementById('deleteModalCollectionName');
+    const confirmBtn = document.getElementById('deleteModalConfirmBtn');
+
+    if (!modal || !nameSpan || !confirmBtn) return;
+
+    nameSpan.textContent = collectionName;
+    confirmBtn.onclick = () => deleteCollection(collectionName);
+
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+}
+
+/**
+ * Deletes a collection entirely.
+ * @param {string} collectionName 
+ */
+function deleteCollection(collectionName) {
+    const newCollections = { ...globalUserData.collections };
+    delete newCollections[collectionName];
+    
+    if (userDocRef) {
+        updateDoc(userDocRef, {
+            collections: newCollections
+        }).then(() => {
+            logActivity(`Deleted collection: ${collectionName}`);
+            closeModal('deleteModal');
+        }).catch(e => {
+            console.error("Error deleting collection:", e);
+            showCustomAlert("Error", "Could not delete collection from the database.");
+        });
+    } else {
+         showCustomAlert("Error", "User profile not ready or not authenticated.");
+    }
+}
+
+
+/**
+ * Filters the main grid to show only spots from a specific collection.
+ * @param {string} collectionName 
+ */
+function viewCollection(collectionName) {
+    const spotIds = globalUserData.collections[collectionName] || [];
+    const collectionSpots = spots.filter(spot => spotIds.includes(spot.id));
+    
+    document.getElementById('viewTitle').textContent = `Collection: ${collectionName}`;
+    showView('dashboard');
+    renderSpots(collectionSpots); // Render the filtered spots
+    
+    // Clear search bar
+    document.getElementById('searchBar').value = '';
+
+    // Add a button to reset the view
+    const dashboardHeader = document.getElementById('dashboardHeader');
+    let resetBtn = document.getElementById('resetViewBtn');
+    if (!resetBtn) {
+        resetBtn = document.createElement('button');
+        resetBtn.id = 'resetViewBtn';
+        resetBtn.className = 'btn-secondary text-sm ml-4';
+        resetBtn.textContent = 'Show All Spots';
+        resetBtn.onclick = resetDashboardView;
+        dashboardHeader.appendChild(resetBtn);
+    } else {
+        resetBtn.style.display = 'inline-block';
+    }
+}
+
+/**
+ * Resets the dashboard view to show all spots.
+ */
+function resetDashboardView() {
+    document.getElementById('viewTitle').textContent = 'Global Spot Atlas';
+    document.getElementById('searchBar').value = '';
+    renderSpots(spots);
+    
+    // Hide reset button
+    const resetBtn = document.getElementById('resetViewBtn');
+    if (resetBtn) {
+        resetBtn.style.display = 'none';
+    }
+}
+
+/**
+ * Renders the achievements section.
+ */
+function renderAchievements() {
     const container = document.getElementById('profileAchievements');
     if (!container) return;
 
-    container.innerHTML = '';
-    
-    const allAchievements = [
-        { id: 'First Login', name: 'First Steps', description: 'Logged into BreakAtlas.', icon: 'shoe-prints' },
-        { id: '5 Favs', name: 'Spot Collector', description: 'Favorited 5 spots.', icon: 'star' },
-        { id: '1st Review', name: 'The Critic', description: 'Wrote your first review.', icon: 'message-square' },
-        { id: 'Explorer', name: 'Explorer', description: 'Viewed 10 unique spots.', icon: 'globe' },
-    ];
+    // Static data from data.js: allAchievements
+    container.innerHTML = allAchievements.map(ach => {
+        const isEarned = globalUserData.achievements.includes(ach.id);
+        const cardClass = isEarned ? 'bg-gray-700 border-green-500' : 'bg-gray-800 border-gray-700 opacity-60';
+        const iconClass = isEarned ? 'text-green-400 fill-green-400' : 'text-gray-500';
+
+        return `
+            <div class="achievement-card ${cardClass} border-2 space-y-2">
+                <div class="flex items-center space-x-3">
+                    <i data-lucide="${ach.icon}" class="w-6 h-6 ${iconClass}"></i>
+                    <h4 class="text-lg font-bold">${ach.name}</h4>
+                </div>
+                <p class="text-sm text-gray-400">${ach.description}</p>
+                ${isEarned ? `<span class="text-xs text-green-500 font-semibold">ACHIEVED!</span>` : `<span class="text-xs text-gray-500">Locked</span>`}
+            </div>
+        `;
+    }).join('');
+    lucide.createIcons();
+}
+
+// Simple achievement check function (called after data saves)
+function checkAchievements() {
+    const stats = globalUserData.globalStats;
+    const currentAchievements = globalUserData.achievements;
+    let earnedNew = false;
     
     allAchievements.forEach(ach => {
-        const achieved = userProfile.achievements.includes(ach.id);
-        const card = document.createElement('div');
-        card.className = `achievement-card p-4 rounded-xl border border-gray-700 shadow-lg ${achieved ? 'bg-green-900/50' : 'bg-gray-800/50 opacity-50'}`;
-        card.innerHTML = `
-            <div class="flex items-center space-x-3">
-                <i data-lucide="${ach.icon}" class="w-6 h-6 ${achieved ? 'text-green-400' : 'text-gray-500'}"></i>
-                <div>
-                    <h4 class="text-lg font-semibold">${ach.name}</h4>
-                    <p class="text-sm text-gray-400">${ach.description}</p>
+        if (!currentAchievements.includes(ach.id) && ach.condition(stats)) {
+            // Earn the achievement!
+            if (userDocRef) {
+                updateDoc(userDocRef, {
+                    achievements: arrayUnion(ach.id)
+                }).then(() => {
+                    logActivity(`ACHIEVEMENT UNLOCKED: ${ach.name}!`);
+                    showCustomAlert("Achievement Unlocked!", `Congratulations! You unlocked: ${ach.name}`);
+                    earnedNew = true;
+                }).catch(e => {
+                    console.error("Error unlocking achievement:", e);
+                });
+            }
+        }
+    });
+
+    // If new achievements were earned, the onSnapshot listener will trigger a re-render.
+}
+
+
+/* ====================================
+   COMMUNITY VIEW RENDERING
+   ==================================== */
+
+/**
+ * Renders the Leaderboard (mock data).
+ */
+function renderLeaderboard() {
+    const container = document.getElementById('leaderboard');
+    if (!container) return;
+
+    const leaderHtml = mockLeaderboard.map((leader, index) => {
+        const rank = index + 1;
+        const rankClass = rank === 1 ? 'text-yellow-400' : rank === 2 ? 'text-gray-400' : rank === 3 ? 'text-amber-600' : 'text-gray-500';
+
+        return `
+            <div class="leader-card bg-gray-800 flex items-center p-3 space-x-4 border border-gray-700 rounded-lg">
+                <span class="text-2xl font-bold ${rankClass}">${rank}.</span>
+                <div class="flex-1">
+                    <h4 class="text-lg font-semibold">${leader.name}</h4>
+                    <p class="text-sm text-gray-400">${leader.crew}</p>
+                </div>
+                <div class="text-right">
+                    <p class="text-xl font-bold" style="color: var(--accent);">${leader.points}</p>
+                    <p class="text-xs text-gray-500">Points</p>
                 </div>
             </div>
         `;
-        container.appendChild(card);
-    });
-
-    // Re-render Lucide icons
-    if (typeof lucide !== 'undefined' && lucide.createIcons) {
-        lucide.createIcons();
-    }
+    }).join('');
+    container.innerHTML = leaderHtml;
 }
 
-function bindProfileEvents() {
-    // Edit Username Modal
-    document.getElementById('editUsernameBtn')?.addEventListener('click', () => {
-        document.getElementById('editUsernameInput').value = userProfile.username;
-        openModal('editUsernameModal');
-    });
-    document.getElementById('saveUsernameBtn')?.addEventListener('click', saveUsername);
+/**
+ * Renders the Hall of Fame (mock data).
+ */
+function renderHallOfFame() {
+    const container = document.getElementById('hallOfFame');
+    if (!container) return;
+
+    const fameHtml = mockHallOfFame.map(famer => `
+        <div class="fame-card bg-gray-800 p-3 space-y-2 border border-gray-700 rounded-lg">
+            <h4 class="text-xl font-bold text-white">${famer.name}</h4>
+            <p class="text-sm text-yellow-400">${famer.title}</p>
+            <p class="text-sm text-gray-400">${famer.year}</p>
+        </div>
+    `).join('');
+    container.innerHTML = fameHtml;
+}
+
+
+/* ====================================
+   STATS & CHALLENGES RENDERING
+   ==================================== */
+
+/**
+ * Renders user's global stats and the chart.
+ */
+function renderGlobalStats() {
+    const container = document.getElementById('globalStats');
+    if (!container) return;
+
+    const stats = globalUserData.globalStats;
+
+    const statsHtml = Object.keys(stats).map(key => `
+        <div class="stat-card bg-gray-800 p-3 space-y-1 border border-gray-700 rounded-lg">
+            <h4 class="text-3xl font-bold" style="color: var(--accent);">${stats[key]}</h4>
+            <p class="text-sm text-gray-400">${STAT_LABELS[key] || key}</p>
+        </div>
+    `).join('');
+    container.innerHTML = statsHtml;
     
-    // New Collection Modal
-    document.getElementById('openCollectionModalBtn')?.addEventListener('click', () => {
-        document.getElementById('collectionNameInput').value = '';
-        openModal('collectionModal');
-    });
-    document.getElementById('createCollectionBtn')?.addEventListener('click', createCollection);
+    // Draw the chart
+    drawSpotTypeChart(document.getElementById('statsChartCanvas'), false); // Bar chart default
 }
 
-function saveUsername() {
-    const newUsername = document.getElementById('editUsernameInput').value.trim();
-    if (newUsername && newUsername !== userProfile.username) {
-        saveUserProfile({ username: newUsername });
-        logActivity(`Changed username from ${userProfile.username} to ${newUsername}`);
-    }
-    closeModal('editUsernameModal');
+/**
+ * Renders challenges (mock data for now).
+ */
+function renderChallenges() {
+    const container = document.getElementById('challenges');
+    if (!container) return;
+
+    const challengesHtml = mockChallenges.map(challenge => {
+        const status = 'In Progress'; // Mock status
+        const progress = Math.min(100, Math.floor(Math.random() * 100)); // Mock progress
+        
+        return `
+            <div class="challenge-card bg-gray-800 p-3 space-y-2 border border-gray-700 rounded-lg">
+                <h4 class="text-lg font-bold text-white">${challenge.name}</h4>
+                <p class="text-sm text-gray-400">${challenge.description}</p>
+                <div class="w-full bg-gray-700 rounded-full h-2.5">
+                    <div class="h-2.5 rounded-full" style="width: ${progress}%; background-color: var(--accent);"></div>
+                </div>
+                <p class="text-xs text-gray-500">${status}: ${progress}% complete</p>
+            </div>
+        `;
+    }).join('');
+    container.innerHTML = challengesHtml;
 }
 
-function createCollection() {
-    const newName = document.getElementById('collectionNameInput').value.trim();
-    if (newName && !userProfile.collections[newName]) {
-        const newCollections = { ...userProfile.collections, [newName]: [] };
-        saveUserProfile({ collections: newCollections });
-        logActivity(`Created new collection: "${newName}"`);
-    } else if (userProfile.collections[newName]) {
-        console.warn(`Collection "${newName}" already exists.`);
-    }
-    closeModal('collectionModal');
-}
 
-function openDeleteCollectionModal(name) {
-    currentCollectionName = name;
-    document.getElementById('deleteModalCollectionName').textContent = name;
-    openModal('deleteModal');
-}
-
-function handleDeleteCollection() {
-    const name = currentCollectionName;
-    if (name && userProfile.collections[name]) {
-        const newCollections = { ...userProfile.collections };
-        delete newCollections[name];
-        saveUserProfile({ collections: newCollections });
-        logActivity(`Deleted collection: "${name}"`);
-    }
-    closeModal('deleteModal');
-}
-
-// --- STATS CHARTING ---
-
-function countType(type) {
-    return spots.filter(s => s.type === type).length;
-}
-
-function toggleChartType() {
-    statsChartType = statsChartType === 'pie' ? 'bar' : 'pie';
-    localStorage.setItem('statsChartType', statsChartType);
-    const chartBtn = document.getElementById('toggleChartBtn');
-    chartBtn.textContent = statsChartType === 'pie' ? 'View as Bar Chart' : 'View as Pie Chart';
-    
-    const statsCanvas = document.getElementById('statsChart');
-    if (statsCanvas) {
-        drawStatsChart(statsCanvas, statsChartType === 'pie');
-    }
-}
-
-function drawStatsChart(canvas, usePie) {
+/**
+ * Draws a chart showing the count of different spot types.
+ * @param {HTMLCanvasElement} canvas 
+ * @param {boolean} usePie - true for pie chart, false for bar chart.
+ */
+function drawSpotTypeChart(canvas, usePie) {
+    if (!canvas) return;
     const ctx = canvas.getContext('2d');
-    canvas.width = canvas.offsetWidth;
-    canvas.height = 280;
+    
+    // Resize the canvas for responsiveness
+    const container = canvas.parentElement;
+    canvas.width = container.clientWidth;
+    canvas.height = 300; 
+
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+    // Filter spots based on favorites for user-specific chart
+    const userSpots = spots.filter(spot => globalUserData.favorites.includes(spot.id));
+    
+    const countType = (type) => userSpots.filter(s => s.type === type).length;
+
     const data = [
-        { label: "Jam", value: countType("Jam"), color: "#ff9f1c" },
-        { label: "Cypher Jam", value: countType("Cypher Jam"), color: "#2ec4b6" },
-        { label: "Training", value: countType("Training"), color: "#e71d36" },
+      { label: "Jam", value: countType("Jam"), color: "#ff9f1c" }, // accent
+      { label: "Cypher Jam", value: countType("Cypher Jam"), color: "#2ec4b6" }, // teal
+      { label: "Training", value: countType("Training"), color: "#e71d36" }, // red
     ];
     const total = data.reduce((sum, d) => sum + d.value, 0) || 1;
 
-    // Chart Title
     ctx.fillStyle = "#f3f4f6"; // text-gray-100
-    ctx.font = "bold 18px Inter";
-    ctx.textAlign = "center";
-    ctx.fillText("Spot Types Distribution", canvas.width / 2, 20);
     ctx.font = "14px Inter";
+    ctx.textAlign = "center";
+
+    if (total === 1) {
+        ctx.fillText("Favorite a spot to see stats!", canvas.width / 2, canvas.height / 2);
+        return;
+    }
 
     if (!usePie) {
-        // Bar chart
-        const margin = 40;
-        const availableWidth = canvas.width - (2 * margin);
-        const barWidth = Math.max(50, (availableWidth / data.length) * 0.6);
-        const gap = (availableWidth - (barWidth * data.length)) / (data.length > 1 ? data.length - 1 : 1);
-        
-        let x = margin;
-        const chartHeight = 180;
-        const chartBottomY = 220; // Y position for the bottom of the bars
+        // Bar chart (Responsive width calculation)
+        const totalBarArea = canvas.width - 80; // 40px padding on each side
+        const barWidth = Math.max(50, (totalBarArea / data.length) * 0.6);
+        const totalGapWidth = totalBarArea - (barWidth * data.length);
+        const gap = data.length > 1 ? totalGapWidth / (data.length - 1) : 0;
+        let x = 40;
         const maxVal = Math.max(...data.map(d => d.value)) || 1;
+        const chartHeight = 180;
         const scale = chartHeight / maxVal;
-
-        // Draw X-Axis Line
-        ctx.strokeStyle = '#4b5563';
-        ctx.beginPath();
-        ctx.moveTo(margin, chartBottomY);
-        ctx.lineTo(canvas.width - margin, chartBottomY);
-        ctx.stroke();
+        const baseLine = canvas.height - 60; // Base line for bars
 
         data.forEach(d => {
             const h = d.value * scale;
-            
-            // Draw bar
             ctx.fillStyle = d.color;
-            ctx.fillRect(x, chartBottomY - h, barWidth, h);
-
-            // Draw labels
+            // Draw the bar
+            ctx.fillRect(x, baseLine - h, barWidth, h);
+            
+            // Draw text labels
             ctx.fillStyle = "#f3f4f6";
-            ctx.textAlign = "center";
-            ctx.fillText(`${d.label}`, x + barWidth / 2, chartBottomY + 20);
-            ctx.fillText(`(${d.value})`, x + barWidth / 2, chartBottomY + 40);
+            ctx.fillText(`${d.label}`, x + barWidth / 2, baseLine + 20);
+            ctx.fillText(`(${d.value})`, x + barWidth / 2, baseLine + 40);
+            
+            // Draw the value on top of the bar
+            ctx.fillText(`${d.value}`, x + barWidth / 2, baseLine - h - 10);
             
             x += barWidth + gap;
         });
+        
+        // Draw Y-axis guide (optional, simple line)
+        ctx.strokeStyle = "#4b5563"; // gray-600
+        ctx.beginPath();
+        ctx.moveTo(40, baseLine);
+        ctx.lineTo(canvas.width - 40, baseLine);
+        ctx.stroke();
 
     } else {
         // Pie chart
         let start = 0;
         const cx = canvas.width / 2;
         const cy = 130;
-        const r = 100;
-        const legendX = cx > 250 ? cx + r + 30 : 20; // Place legend based on width
-
-        data.forEach((d, index) => {
+        const r = 90;
+        let legendY = 240;
+        
+        data.forEach(d => {
             const angle = (d.value / total) * Math.PI * 2;
             
-            // Draw slice
+            // Draw the slice
             ctx.beginPath();
             ctx.moveTo(cx, cy);
+            ctx.fillStyle = d.color;
             ctx.arc(cx, cy, r, start, start + angle);
             ctx.closePath();
-            ctx.fillStyle = d.color;
             ctx.fill();
             
-            // Draw label near slice (optional, simplified for space)
+            // Draw label near the slice
             const midAngle = start + angle / 2;
-            const textX = cx + (r / 1.5) * Math.cos(midAngle);
-            const textY = cy + (r / 1.5) * Math.sin(midAngle);
+            const labelR = r * 0.7; // Position labels slightly inside
+            const labelX = cx + labelR * Math.cos(midAngle);
+            const labelY = cy + labelR * Math.sin(midAngle);
             
-            if (d.value / total > 0.05) { // Only label large slices
-                ctx.fillStyle = "#111827"; // Dark text for contrast
-                ctx.textAlign = "center";
-                ctx.fillText(`${d.value}`, textX, textY + 5);
-            }
+            ctx.fillStyle = "white"; // White labels for contrast
+            ctx.fillText(`${d.label} (${d.value})`, labelX, labelY);
 
-            // Draw legend dot and text
-            const legendY = 40 + index * 25;
-            ctx.fillStyle = d.color;
-            ctx.fillRect(legendX, legendY, 10, 10);
-            ctx.fillStyle = "#f3f4f6";
-            ctx.textAlign = "left";
-            ctx.fillText(`${d.label} (${d.value})`, legendX + 15, legendY + 10);
-
+            // Draw legend (if needed, but space is limited)
+            // ctx.fillStyle = d.color;
+            // ctx.fillRect(40, legendY, 10, 10);
+            // ctx.fillStyle = "#f3f4f6";
+            // ctx.textAlign = "left";
+            // ctx.fillText(`${d.label} (${d.value})`, 60, legendY + 8);
+            // legendY += 20;
 
             start += angle;
         });
     }
 }
 
-// --- COMMUNITY / LEADERBOARD ---
 
-function renderLeaderboard() {
-    const container = document.getElementById('leaderboard');
-    if (!container) return;
+/* ====================================
+   STORY MODE / SLIDESHOW
+   ==================================== */
 
-    container.innerHTML = '<!-- Mock Leaderboard -->';
-    
-    // Mock user data for leaderboard (In a real app, this would be a Firestore query)
-    const mockLeaders = [
-        { rank: 1, name: "Bboy Cyclone", score: 980, country: "USA" },
-        { rank: 2, name: "Bgurl Flash", score: 950, country: "France" },
-        { rank: 3, name: "Kid Freeze", score: 920, country: "Japan" },
-        { rank: 4, name: "Rocksteady Ryu", score: 890, country: "Germany" },
-    ];
+let currentSlide = 0;
 
-    mockLeaders.forEach(leader => {
-        const card = document.createElement('div');
-        card.className = 'leader-card p-4 bg-gray-800 rounded-xl border border-gray-700 shadow-lg flex items-center space-x-3';
-        card.innerHTML = `
-            <span class="text-2xl font-bold ${leader.rank <= 3 ? 'text-yellow-400' : 'text-gray-400'}">${leader.rank}.</span>
-            <div>
-                <h4 class="font-semibold">${leader.name}</h4>
-                <p class="text-sm text-gray-400">${leader.score} Pts | ${leader.country}</p>
-            </div>
-        `;
-        container.appendChild(card);
-    });
+/**
+ * Binds story mode buttons.
+ */
+function bindStoryModeEvents() {
+    document.getElementById('prevSlide')?.addEventListener('click', () => changeSlide(-1));
+    document.getElementById('nextSlide')?.addEventListener('click', () => changeSlide(1));
+    document.getElementById('exitStory')?.addEventListener('click', () => showView('dashboard'));
+    renderStoryMode();
 }
 
-function renderHallOfFame() {
-    const container = document.getElementById('hallOfFame');
-    if (!container) return;
-
-    container.innerHTML = '<!-- Mock Hall of Fame -->';
-
-    // Mock data
-    const mockFamers = [
-        { name: "Crazy Legs", year: 2000, feat: "Pioneer of Power Moves" },
-        { name: "Storm", year: 2005, feat: "Legendary European Choreographer" },
-    ];
-
-    mockFamers.forEach(famer => {
-        const card = document.createElement('div');
-        card.className = 'fame-card p-4 bg-gray-800 rounded-xl border border-gray-700 shadow-lg';
-        card.innerHTML = `
-            <h4 class="text-lg font-semibold">${famer.name}</h4>
-            <p class="text-sm text-gray-400">Inducted: ${famer.year}</p>
-            <p class="text-sm mt-1">${famer.feat}</p>
-        `;
-        container.appendChild(card);
-    });
+/**
+ * Changes the current slide and updates the view.
+ * @param {number} delta - 1 for next, -1 for previous.
+ */
+function changeSlide(delta) {
+    currentSlide = (currentSlide + delta + storySlidesData.length) % storySlidesData.length;
+    renderStoryMode();
 }
 
-function renderGlobalStats() {
-    const container = document.getElementById('globalStats');
-    if (!container) return;
-
-    container.innerHTML = '<!-- Mock Global Stats -->';
-
-    // Mock data
-    const totalSpots = spots.length;
-    const totalCountries = [...new Set(spots.map(s => s.country))].length;
-    const totalJams = countType('Jam');
-
-    const mockStats = [
-        { label: "Total Spots Mapped", value: totalSpots, icon: "map-pin" },
-        { label: "Countries Covered", value: totalCountries, icon: "globe" },
-        { label: "Major Jams Listed", value: totalJams, icon: "flame" },
-    ];
-
-    mockStats.forEach(stat => {
-        const card = document.createElement('div');
-        card.className = 'stat-card p-4 bg-gray-800 rounded-xl border border-gray-700 shadow-lg flex items-center space-x-3';
-        card.innerHTML = `
-            <i data-lucide="${stat.icon}" class="w-6 h-6 text-accent"></i>
-            <div>
-                <h4 class="text-2xl font-bold">${stat.value}</h4>
-                <p class="text-sm text-gray-400">${stat.label}</p>
-            </div>
-        `;
-        container.appendChild(card);
-    });
-}
-
-function renderChallenges() {
-    const container = document.getElementById('challenges');
-    if (!container) return;
-
-    container.innerHTML = '<!-- Mock Challenges -->';
-    
-    // Mock data
-    const mockChallenges = [
-        { name: "Europe Traveler", goal: "Visit 3 different countries' spots.", progress: 1, total: 3, done: false },
-        { name: "Jam Master", goal: "Find 5 major Jams.", progress: 5, total: 5, done: true },
-        { name: "Review King", goal: "Write 3 spot reviews.", progress: 0, total: 3, done: false },
-    ];
-
-    mockChallenges.forEach(challenge => {
-        const card = document.createElement('div');
-        const progressPercent = (challenge.progress / challenge.total) * 100;
-        card.className = `challenge-card p-4 rounded-xl border ${challenge.done ? 'border-green-600 bg-green-900/30' : 'border-gray-700 bg-gray-800'}`;
-        card.innerHTML = `
-            <h4 class="font-semibold">${challenge.name}</h4>
-            <p class="text-sm text-gray-400 mb-2">${challenge.goal}</p>
-            <div class="w-full bg-gray-700 rounded-full h-2.5">
-                <div class="h-2.5 rounded-full ${challenge.done ? 'bg-green-500' : 'bg-accent'}" style="width: ${progressPercent}%"></div>
-            </div>
-            <p class="text-xs text-right mt-1">${challenge.progress}/${challenge.total} ${challenge.done ? '(Completed)' : ''}</p>
-        `;
-        container.appendChild(card);
-    });
-}
-
-
-// --- STORY MODE SLIDESHOW ---
-
-let currentSlideIndex = 0;
-
-function renderStorySlide(index) {
-    const slide = storySlidesData[index];
+/**
+ * Renders the current story mode slide.
+ */
+function renderStoryMode() {
     const container = document.getElementById('storySlides');
-    if (!container || !slide) return;
+    if (!container) return;
+
+    const slide = storySlidesData[currentSlide];
 
     container.innerHTML = `
-        <div class="bg-gray-800 p-6 rounded-xl shadow-2xl border border-gray-700">
-            <img src="${slide.image}" alt="Slide image for ${slide.title}" class="w-full h-40 object-cover rounded-lg mb-4">
-            <h3 class="text-2xl font-bold text-accent mb-2">${slide.title}</h3>
-            <p class="text-gray-300">${slide.text}</p>
+        <div class="bg-gray-800 p-6 rounded-xl shadow-2xl space-y-4">
+            <h3 class="text-3xl font-bold text-white" style="color: var(--accent);">${slide.title}</h3>
+            <img src="${slide.image}" alt="${slide.title}" class="w-full h-auto rounded-lg shadow-md" />
+            <p class="text-lg text-gray-300">${slide.text}</p>
+            <p class="text-sm text-gray-500 mt-4">Slide ${currentSlide + 1} of ${storySlidesData.length}</p>
         </div>
     `;
-    
-    // Update button states
-    document.getElementById('prevSlide').disabled = index === 0;
-    document.getElementById('nextSlide').disabled = index === storySlidesData.length - 1;
+
+    // Update buttons
+    const prevBtn = document.getElementById('prevSlide');
+    const nextBtn = document.getElementById('nextSlide');
+    if (prevBtn) prevBtn.textContent = currentSlide === 0 ? 'Start Over' : 'Previous';
+    if (nextBtn) nextBtn.textContent = currentSlide === storySlidesData.length - 1 ? 'Finish' : 'Next';
 }
 
-function bindStoryModeEvents() {
-    document.getElementById('prevSlide')?.addEventListener('click', () => {
-        currentSlideIndex = Math.max(0, currentSlideIndex - 1);
-        renderStorySlide(currentSlideIndex);
-    });
-    document.getElementById('nextSlide')?.addEventListener('click', () => {
-        currentSlideIndex = Math.min(storySlidesData.length - 1, currentSlideIndex + 1);
-        renderStorySlide(currentSlideIndex);
-    });
-    document.getElementById('exitStory')?.addEventListener('click', () => {
-        currentSlideIndex = 0; // Reset index
-        showView('dashboard');
-    });
 
-    // Initial render when view is first shown
-    if (currentView === 'storyMode') {
-        renderStorySlide(currentSlideIndex);
-    }
-}
+/* ====================================
+   SHARE LOGIC
+   ==================================== */
 
-// --- SHARING (Web Share API fallback) ---
+/**
+ * Shares a spot using the Web Share API or a fallback popup.
+ * @param {string} spotId 
+ */
+function shareSpot(spotId) {
+    const spot = findSpot(spotId);
+    if (!spot) return;
 
-function closeSharePopup() {
-    document.getElementById('sharePopup').classList.add('hidden');
-}
-
-function shareSpot(spot) {
-    const shareData = {
-        title: `Check out ${spot.name} on BreakAtlas!`,
-        text: `The ${spot.type} spot in ${spot.city}, ${spot.country}: ${spot.about}`,
-        url: `${window.location.href}?spot=${spot.id}` // Mock URL structure
-    };
+    const shareUrl = `${window.location.href.split('#')[0]}?spot=${spotId}`;
+    const shareText = `Check out this breaking spot: ${spot.name} in ${spot.city}, ${spot.country}!`;
 
     if (navigator.share) {
-        navigator.share(shareData)
-            .then(() => logActivity(`Successfully shared spot: ${spot.name}`))
-            .catch((error) => console.error('Error sharing:', error));
+        // Use Web Share API if available
+        navigator.share({
+            title: 'BreakAtlas Spot',
+            text: shareText,
+            url: shareUrl,
+        }).catch(error => console.error('Error sharing:', error));
     } else {
-        // Fallback for browsers without Web Share API
+        // Fallback to custom popup
         const popup = document.getElementById('sharePopup');
         const linksContainer = document.getElementById('sharePopupLinks');
-        
-        linksContainer.innerHTML = `
-            <p class="text-sm text-gray-400">Copy the link below:</p>
-            <div class="flex items-center space-x-2">
-                <input type="text" id="shareLinkInput" value="${shareData.url}" readonly class="flex-grow p-2 bg-gray-700 rounded-lg border border-gray-600 text-sm">
-                <button onclick="copyToClipboard('shareLinkInput')" class="btn-primary text-sm p-2 w-20">Copy</button>
-            </div>
-            <p class="text-sm text-gray-400 mt-2">Or share via:</p>
-            <div class="flex space-x-4 mt-2">
-                <a href="https://twitter.com/intent/tweet?text=${encodeURIComponent(shareData.title)}&url=${encodeURIComponent(shareData.url)}" target="_blank" class="text-blue-400 hover:text-blue-300 transition"><i data-lucide="twitter" class="w-6 h-6"></i></a>
-                <a href="mailto:?subject=${encodeURIComponent(shareData.title)}&body=${encodeURIComponent(shareData.text + ' ' + shareData.url)}" class="text-red-400 hover:text-red-300 transition"><i data-lucide="mail" class="w-6 h-6"></i></a>
-            </div>
-        `;
-        
-        // Re-render Lucide icons
-        if (typeof lucide !== 'undefined' && lucide.createIcons) {
-            lucide.createIcons();
-        }
 
+        if (!popup || !linksContainer) return;
+
+        linksContainer.innerHTML = `
+            <input id="shareLinkInput" type="text" value="${shareUrl}" readonly class="bg-gray-700 text-gray-100 p-2 rounded-lg w-full" />
+            <button onclick="copyToClipboard('shareLinkInput')" class="btn-secondary w-full">Copy Link</button>
+            <a href="mailto:?subject=BreakAtlas Spot&body=${encodeURIComponent(shareText + ' ' + shareUrl)}" class="btn-primary text-center" target="_blank">Share via Email</a>
+        `;
+
+        // Show popup
         popup.classList.remove('hidden');
     }
 }
 
-function copyToClipboard(elementId) {
-    const element = document.getElementById(elementId);
-    element.select();
-    document.execCommand('copy');
-    // Provide visual feedback
-    const copyBtn = element.nextElementSibling;
-    const originalText = copyBtn.textContent;
-    copyBtn.textContent = 'Copied!';
-    setTimeout(() => {
-        copyBtn.textContent = originalText;
-    }, 2000);
+/**
+ * Closes the share popup.
+ */
+function closeSharePopup() {
+    const popup = document.getElementById('sharePopup');
+    if (popup) {
+        popup.classList.add('hidden');
+    }
 }
+
+/**
+ * Copies text from an input element to the clipboard.
+ * @param {string} elementId - ID of the input element.
+ */
+function copyToClipboard(elementId) {
+    const copyText = document.getElementById(elementId);
+    if (copyText) {
+        copyText.select();
+        copyText.setSelectionRange(0, 99999); // For mobile devices
+        try {
+            document.execCommand('copy');
+            showCustomAlert('Copied!', 'The link has been copied to your clipboard.');
+        } catch (err) {
+            console.error('Could not copy text: ', err);
+            showCustomAlert('Error', 'Failed to copy link. Please copy it manually.');
+        }
+    }
+}
+
+
+/* ====================================
+   DOM READY & INITIALIZATION
+   ==================================== */
+
+/* DOM ready: init map, render cards, bind events */
+document.addEventListener("DOMContentLoaded", () => {
+  // Theme color is initialized outside of this block
+  
+  // Set up events that don't depend on Firebase data immediately
+  bindDashboardEvents();
+  bindProfileEvents();
+  bindStoryModeEvents();
+  
+  // Render initial static parts
+  renderLeaderboard();
+  renderHallOfFame();
+  renderGlobalStats();
+  renderChallenges();
+
+  // Initialize the map immediately, but rendering spots/markers relies on L being fully loaded and then Firebase data
+  initMap(); 
+  
+  // Attach resize listener for chart responsiveness
+  window.addEventListener('resize', () => {
+    // Only redraw chart if profile/dashboard is visible
+    if (currentView === 'profile' || currentView === 'dashboard') {
+        renderGlobalStats();
+    }
+    if (map) {
+        map.invalidateSize();
+    }
+  });
+
+});
+
+// Function to handle hamburger menu toggle
+function toggleMenu() {
+    const navLinks = document.getElementById('navLinks');
+    if (navLinks) {
+        navLinks.classList.toggle('flex');
+        navLinks.classList.toggle('hidden');
+    }
+}
+
+// Attach the toggleMenu to the global scope for the HTML button
+window.toggleMenu = toggleMenu;
+window.showView = showView;
+window.toggleFavorite = toggleFavorite;
+window.openSpotModal = openSpotModal;
+window.closeModal = closeModal;
+window.shareSpot = shareSpot;
+window.closeSharePopup = closeSharePopup;
+window.copyToClipboard = copyToClipboard;
+window.viewCollection = viewCollection;
+window.openCollectionModal = openCollectionModal;
+window.toggleSpotInCollection = toggleSpotInCollection;
+window.openDeleteModal = openDeleteModal;
+window.deleteCollection = deleteCollection;
+window.resetDashboardView = resetDashboardView;
+window.createCollection = createCollection;
+window.showCustomAlert = showCustomAlert; // Expose alert for other parts of the app
+
+// Need to expose initMap for the check in showView
+window.initMap = initMap;
