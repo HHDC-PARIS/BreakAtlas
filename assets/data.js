@@ -52,8 +52,3 @@ const spots = [
   {
     id: "spot_centquatre",
     name: "Centquatre",
-    city: "Paris",
-    country: "France",
-    crew: "Aktuel Force",
-    type: "Training Spot",
-    image:
