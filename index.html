@@ -4,19 +4,21 @@
   <meta charset="UTF-8" />
   <title>BreakAtlas</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <!-- Local CSS in subfolder -->
   <link rel="stylesheet" href="./assets/style.css" />
 </head>
 <body>
   <header>
     <h1>BreakAtlas</h1>
-    <nav>
-      <button id="tabDashboard" class="tab active">Dashboard</button>
-      <button id="tabProfile" class="tab">Profile</button>
-      <button id="tabLeaderboard" class="tab">Leaderboard</button>
-      <button id="tabStory" class="tab">Story Mode</button>
+    <nav id="navbar">
+      <button class="hamburger" onclick="toggleMenu()">☰</button>
+      <ul id="navLinks">
+        <li><a href="#" onclick="showView('dashboard')">Dashboard</a></li>
+        <li><a href="#" onclick="showView('profile')">Profile</a></li>
+        <li><a href="#" onclick="showView('leaderboardView')">Leaderboard</a></li>
+        <li><a href="#" onclick="showView('storyMode')">Story Mode</a></li>
+        <li><a href="#" onclick="showView('loginView')">Login</a></li>
+      </ul>
     </nav>
   </header>
 
@@ -24,7 +26,7 @@
     <!-- Dashboard -->
     <section id="dashboard" class="view">
       <div class="controls">
-        <input type="text" id="searchBar" placeholder="Search spots..." />
+        <input type="text" id="searchBar" placeholder="Search jams, cyphers, training spots..." />
         <button id="resetFilterBtn" style="display:none;">Reset Filter</button>
         <div id="filterSummary" style="display:none;"></div>
       </div>
@@ -95,13 +97,18 @@
       <button id="nextSlide">Next</button>
       <button id="exitStory">Exit Story Mode</button>
     </section>
+
+    <!-- Login -->
+    <section id="loginView" class="view" style="display:none;">
+      <h2>Login</h2>
+      <input type="text" id="username" placeholder="Username" />
+      <input type="password" id="password" placeholder="Password" />
+      <button onclick="login()">Login</button>
+    </section>
   </main>
 
-  <!-- Data must load BEFORE app.js -->
   <script src="./assets/data.js"></script>
-  <!-- Leaflet JS -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <!-- App logic -->
   <script src="./assets/app.js"></script>
 </body>
 </html>
