@@ -1,3 +1,4 @@
+/* Global layout and theme */
 body {
   font-family: "Segoe UI", Arial, sans-serif;
   background: #0f1115;
@@ -5,6 +6,7 @@ body {
   margin: 0;
 }
 
+/* Header and navigation */
 .header {
   background: #141821;
   padding: 12px 20px;
@@ -12,31 +14,104 @@ body {
   justify-content: space-between;
   align-items: center;
 }
-
 .logo { margin: 0; font-size: 20px; }
 
+/* Responsive navbar */
 .navbar { display: flex; align-items: center; }
-.hamburger { font-size: 22px; background: none; border: none; color: #e9eef5; cursor: pointer; }
-.nav-links { display: none; list-style: none; padding: 0; margin: 0; }
+.hamburger {
+  font-size: 22px;
+  background: none;
+  border: none;
+  color: #e9eef5;
+  cursor: pointer;
+}
+.nav-links {
+  display: none; /* hidden by default, toggled with .show */
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
 .nav-links.show { display: block; }
 .nav-links li { margin: 6px 0; }
 .nav-links a { color: #e9eef5; text-decoration: none; }
 
+/* Views and containers */
 .view { padding: 20px; }
-.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
 
+/* Cards grid */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+/* Spot card */
 .card {
   background: #191c22;
   border-radius: 12px;
   padding: 12px;
+  border: 1px solid #242a36;
 }
 .card img { width: 100%; border-radius: 10px; }
+.card h3 { margin: 8px 0; }
+.card p { margin: 6px 0; color: #bfc7d5; }
 .card-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.card-actions button {
+  background: #2a3040;
+  color: #e9eef5;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+.card-actions button:hover {
+  background: #364057;
+}
 
-#map { height: 420px; border-radius: 12px; }
+/* Map area */
+#map { height: 420px; border-radius: 12px; border: 1px solid #242a36; }
+.map-pane { margin-top: 16px; }
+#mapLayers {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
 
-.avatar { width: 70px; height: 70px; border-radius: 50%; }
+/* Profile */
+.avatar { width: 70px; height: 70px; border-radius: 50%; border: 2px solid #2a3040; }
+#profileFavorites, #profileActivity { list-style: none; padding-left: 0; }
+#profileFavorites li, #profileActivity li {
+  background: #191c22;
+  border: 1px solid #242a36;
+  margin-bottom: 6px;
+  padding: 8px;
+  border-radius: 10px;
+}
 
+/* Leaderboard and hall of fame */
+#leaderboard, #hallOfFame, #globalStats, #profileCollections, #profileAchievements, #challenges {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}
+.leader-card, .fame-card, .stat-card, .collection-card, .achievement-card, .challenge-card {
+  background: #191c22;
+  border: 1px solid #242a36;
+  border-radius: 10px;
+  padding: 10px;
+}
+
+/* Stats canvas area */
+.stats {
+  background: #191c22;
+  border: 1px solid #242a36;
+  border-radius: 12px;
+  padding: 12px;
+}
+
+/* Share popup */
 .share-popup {
   position: fixed;
   bottom: 20px;
@@ -52,3 +127,21 @@ body {
 }
 .share-popup a { color: #ff9f1c; text-decoration: none; }
 .share-popup a:hover { text-decoration: underline; }
+.share-popup .btn-secondary {
+  background: #2a3040;
+  color: #e9eef5;
+  border: none;
+  border-radius: 8px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+.share-popup .btn-secondary:hover { background: #364057; }
+
+/* Small adjustments for accessibility */
+button:focus, a:focus { outline: 2px solid #ff9f1c; outline-offset: 2px; }
+
+/* Responsive tweaks */
+@media (min-width: 768px) {
+  .nav-links { display: flex; gap: 16px; }
+  .nav-links li { margin: 0; }
+}

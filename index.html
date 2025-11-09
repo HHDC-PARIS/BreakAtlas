@@ -4,15 +4,20 @@
   <meta charset="UTF-8" />
   <title>BreakAtlas</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- Leaflet styles -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <!-- App styles -->
   <link rel="stylesheet" href="./assets/style.css" />
 </head>
 <body>
+  <!-- Header and navigation -->
   <header class="header">
     <h1 class="logo">BreakAtlas</h1>
     <nav id="navbar" class="navbar">
+      <!-- Mobile menu toggle -->
       <button class="hamburger" onclick="toggleMenu()">☰</button>
       <ul id="navLinks" class="nav-links">
+        <!-- Use javascript:void(0) to avoid URL # fragments -->
         <li><a href="javascript:void(0)" onclick="showView('dashboard')">Dashboard</a></li>
         <li><a href="javascript:void(0)" onclick="showView('profile')">Profile</a></li>
         <li><a href="javascript:void(0)" onclick="showView('leaderboardView')">Leaderboard</a></li>
@@ -23,18 +28,23 @@
   </header>
 
   <main>
+    <!-- Dashboard: search, stats, map, cards -->
     <section id="dashboard" class="view">
       <div class="controls">
         <input type="text" id="searchBar" placeholder="Search jams, cyphers, training spots..." />
         <button id="resetFilterBtn" style="display:none;">Reset Filter</button>
         <div id="filterSummary" style="display:none;"></div>
       </div>
+
+      <!-- Simple stats area (canvas rendered with custom JS) -->
       <div class="stats">
         <h3>Stats Overview</h3>
         <button id="toggleChartBtn">Switch to Pie Chart</button>
         <canvas id="statsChart" width="600" height="280"></canvas>
         <div id="chartLegend"></div>
       </div>
+
+      <!-- Map with layer toggles -->
       <div class="map-pane">
         <div id="mapLayers">
           <label><input type="checkbox" id="layerFavorites" checked /> Favorites</label>
@@ -42,38 +52,54 @@
           <label><input type="checkbox" id="layerCountries" checked /> Countries</label>
           <label><input type="checkbox" id="layerCities" checked /> Cities</label>
         </div>
-        <div id="map"></div>
+        <div id="map" aria-label="Map of breaking spots"></div>
       </div>
-      <section id="cards" class="grid"></section>
+
+      <!-- Cards grid -->
+      <section id="cards" class="grid" aria-label="Spot cards grid"></section>
     </section>
 
+    <!-- Profile: avatar, theme, favorites, collections, achievements, activity, global stats, challenges -->
     <section id="profile" class="view" style="display:none;">
       <h2>Profile</h2>
       <img id="profileAvatar" class="avatar" src="" alt="Avatar" />
       <input type="file" id="avatarUpload" />
       <input type="color" id="themeColorPicker" />
-      <h3>Favorites</h3><ul id="profileFavorites"></ul>
-      <h3>Collections</h3><div id="profileCollections"></div>
+      <h3>Favorites</h3>
+      <ul id="profileFavorites"></ul>
+      <h3>Collections</h3>
+      <div id="profileCollections"></div>
       <input type="text" id="newCollectionName" placeholder="New collection name" />
       <button id="createCollectionBtn">Create Collection</button>
-      <h3>Achievements</h3><div id="profileAchievements"></div><div id="achievementProgress"></div>
-      <h3>Activity Feed</h3><ul id="profileActivity"></ul>
-      <h3>Global Stats</h3><div id="globalStats"></div>
-      <h3>User Challenges</h3><div id="challenges"></div>
+      <h3>Achievements</h3>
+      <div id="profileAchievements"></div>
+      <div id="achievementProgress"></div>
+      <h3>Activity Feed</h3>
+      <ul id="profileActivity"></ul>
+      <h3>Global Stats</h3>
+      <div id="globalStats"></div>
+      <h3>User Challenges</h3>
+      <div id="challenges"></div>
     </section>
 
+    <!-- Leaderboard + Hall of Fame -->
     <section id="leaderboardView" class="view" style="display:none;">
-      <h2>Community Leaderboard</h2><div id="leaderboard"></div>
-      <h3>Hall of Fame</h3><div id="hallOfFame"></div>
+      <h2>Community Leaderboard</h2>
+      <div id="leaderboard"></div>
+      <h3>Hall of Fame</h3>
+      <div id="hallOfFame"></div>
     </section>
 
+    <!-- Story mode slideshow -->
     <section id="storyMode" class="view" style="display:none;">
-      <h2>Story Mode</h2><div id="storySlides"></div>
+      <h2>Story Mode</h2>
+      <div id="storySlides"></div>
       <button id="prevSlide">Previous</button>
       <button id="nextSlide">Next</button>
       <button id="exitStory">Exit Story Mode</button>
     </section>
 
+    <!-- Simple login -->
     <section id="loginView" class="view" style="display:none;">
       <h2>Login</h2>
       <input type="text" id="username" placeholder="Username" />
@@ -82,8 +108,10 @@
     </section>
   </main>
 
+  <!-- Share popup (used when Web Share API unavailable) -->
   <div id="sharePopup" class="share-popup" style="display:none;"></div>
 
+  <!-- Data first, then Leaflet, then app logic -->
   <script src="./assets/data.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="./assets/app.js"></script>
