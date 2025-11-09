@@ -23,18 +23,21 @@
   </header>
 
   <main>
+    <!-- Dashboard -->
     <section id="dashboard" class="view">
       <div class="controls">
         <input type="text" id="searchBar" placeholder="Search jams, cyphers, training spots..." />
         <button id="resetFilterBtn" style="display:none;">Reset Filter</button>
         <div id="filterSummary" style="display:none;"></div>
       </div>
+
       <div class="stats">
         <h3>Stats Overview</h3>
         <button id="toggleChartBtn">Switch to Pie Chart</button>
         <canvas id="statsChart" width="600" height="280"></canvas>
         <div id="chartLegend"></div>
       </div>
+
       <div class="map-pane">
         <div id="mapLayers">
           <label><input type="checkbox" id="layerFavorites" checked /> Favorites</label>
@@ -44,41 +47,99 @@
         </div>
         <div id="map"></div>
       </div>
+
       <section id="cards" class="grid"></section>
     </section>
 
+    <!-- Profile -->
     <section id="profile" class="view" style="display:none;">
       <h2>Profile</h2>
-      <img id="profileAvatar" class="avatar" src="" alt="Avatar" />
-      <input type="file" id="avatarUpload" />
-      <input type="color" id="themeColorPicker" />
-      <h3>Favorites</h3><ul id="profileFavorites"></ul>
-      <h3>Collections</h3><div id="profileCollections"></div>
-      <input type="text" id="newCollectionName" placeholder="New collection name" />
-      <button id="createCollectionBtn">Create Collection</button>
-      <h3>Achievements</h3><div id="profileAchievements"></div><div id="achievementProgress"></div>
-      <h3>Activity Feed</h3><ul id="profileActivity"></ul>
-      <h3>Global Stats</h3><div id="globalStats"></div>
-      <h3>User Challenges</h3><div id="challenges"></div>
+
+      <div class="profile-header">
+        <img id="profileAvatar" class="avatar" src="" alt="Avatar" />
+        <div class="profile-controls">
+          <label class="inline">
+            <span>Upload avatar</span>
+            <input type="file" id="avatarUpload" accept="image/*" />
+          </label>
+          <label class="inline">
+            <span>Theme color</span>
+            <input type="color" id="themeColorPicker" />
+          </label>
+        </div>
+      </div>
+
+      <div class="profile-columns">
+        <div class="col">
+          <div class="panel">
+            <h3>Favorites</h3>
+            <ul id="profileFavorites" class="list"></ul>
+          </div>
+
+          <div class="panel">
+            <h3>Collections</h3>
+            <div id="profileCollections" class="collections"></div>
+            <div class="collection-form">
+              <input type="text" id="newCollectionName" placeholder="New collection name" />
+              <button id="createCollectionBtn" class="btn">Create</button>
+            </div>
+          </div>
+
+          <div class="panel">
+            <h3>Achievements</h3>
+            <div id="profileAchievements" class="achievements"></div>
+            <div id="achievementProgress" class="progress"></div>
+          </div>
+
+          <div class="panel">
+            <h3>Activity feed</h3>
+            <ul id="profileActivity" class="list feed"></ul>
+          </div>
+        </div>
+
+        <div class="col">
+          <div class="panel">
+            <h3>Global stats</h3>
+            <div id="globalStats" class="grid stats-grid"></div>
+          </div>
+
+          <div class="panel">
+            <h3>User challenges</h3>
+            <div id="challenges" class="grid challenge-grid"></div>
+          </div>
+        </div>
+      </div>
     </section>
 
+    <!-- Leaderboard -->
     <section id="leaderboardView" class="view" style="display:none;">
-      <h2>Community Leaderboard</h2><div id="leaderboard"></div>
-      <h3>Hall of Fame</h3><div id="hallOfFame"></div>
+      <h2>Community leaderboard</h2>
+      <div id="leaderboard" class="leaderboard"></div>
+
+      <h3>Hall of fame</h3>
+      <div id="hallOfFame" class="hall-of-fame"></div>
     </section>
 
+    <!-- Story Mode -->
     <section id="storyMode" class="view" style="display:none;">
-      <h2>Story Mode</h2><div id="storySlides"></div>
-      <button id="prevSlide">Previous</button>
-      <button id="nextSlide">Next</button>
-      <button id="exitStory">Exit Story Mode</button>
+      <h2>Story mode</h2>
+      <p class="muted">Slideshow of jams, cyphers, and training spots with map focus.</p>
+      <div id="storySlides" class="story-slides"></div>
+      <div class="story-controls">
+        <button id="prevSlide" class="btn btn-secondary">Previous</button>
+        <button id="nextSlide" class="btn">Next</button>
+        <button id="exitStory" class="btn btn-danger">Exit</button>
+      </div>
     </section>
 
+    <!-- Login -->
     <section id="loginView" class="view" style="display:none;">
       <h2>Login</h2>
-      <input type="text" id="username" placeholder="Username" />
-      <input type="password" id="password" placeholder="Password" />
-      <button onclick="login()">Login</button>
+      <div class="panel">
+        <input type="text" id="username" placeholder="Username" />
+        <input type="password" id="password" placeholder="Password" />
+        <button class="btn" onclick="login()">Login</button>
+      </div>
     </section>
   </main>
 

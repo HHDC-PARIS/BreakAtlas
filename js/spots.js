@@ -1,144 +1,173 @@
-// spots.js
+// BreakAtlas — European breaking jams, cyphers & training spots
 
 const spots = [
+    // France
     {
-      name: "Berlin Wall",
-      city: "Berlin",
-      country: "Germany",
-      crew: "Crew A",
-      image: "https://picsum.photos/seed/berlin/600/400",
-      lat: 52.5,
-      lng: 13.4,
-      about: "Historic graffiti spot with layers of political and artistic expression.",
-      reviews: [
-        { rating: 5, text: "Iconic and powerful." },
-        { rating: 4, text: "Great atmosphere and history." }
-      ]
+      id: "spot_boty",
+      name: "Battle of the Year France",
+      city: "Montpellier",
+      country: "France",
+      crew: "Vagabonds Crew",
+      type: "Jam",
+      image: "https://upload.wikimedia.org/wikipedia/commons/0/0a/Battle_of_the_Year_stage.jpg",
+      lat: 43.61, lng: 3.87,
+      about: "Legendary European breaking championship.",
+      reviews: [{ rating: 5, text: "Historic jam." }]
     },
     {
-      name: "Paris Metro",
+      id: "spot_laplace",
+      name: "La Place Hip Hop",
       city: "Paris",
       country: "France",
-      crew: "Crew B",
-      image: "https://picsum.photos/seed/paris/600/400",
-      lat: 48.86,
-      lng: 2.35,
-      about: "Underground art scene with vibrant murals and stencil work.",
-      reviews: [
-        { rating: 4, text: "Colorful and edgy." },
-        { rating: 3, text: "Hard to find but worth it." }
-      ]
+      crew: "Paris City Breakers",
+      type: "Training Spot",
+      image: "https://laplace-paris.com/wp-content/uploads/2021/05/la-place-training.jpg",
+      lat: 48.86, lng: 2.35,
+      about: "Hip‑hop center with regular breaking sessions.",
+      reviews: [{ rating: 5, text: "Perfect training spot." }]
     },
     {
-      name: "Shoreditch",
+      id: "spot_centquatre",
+      name: "Centquatre",
+      city: "Paris",
+      country: "France",
+      crew: "Aktuel Force",
+      type: "Training Spot",
+      image: "https://images.unsplash.com/photo-1540575467063-178a50fef0b4?auto=format&fit=crop&w=1200&q=60",
+      lat: 48.89, lng: 2.37,
+      about: "Public venue with open spaces where breakers train daily.",
+      reviews: [{ rating: 4, text: "Always cyphers, great energy." }]
+    },
+  
+    // Netherlands
+    {
+      id: "spot_ibe",
+      name: "The Notorious IBE",
+      city: "Heerlen",
+      country: "Netherlands",
+      crew: "The Ruggeds",
+      type: "Jam",
+      image: "https://thenotoriousibe.com/wp-content/uploads/2023/08/ibe-main-stage.jpg",
+      lat: 50.89, lng: 5.98,
+      about: "Festival with battles, cyphers, community sessions.",
+      reviews: [{ rating: 5, text: "Best community jam." }]
+    },
+  
+    // Slovakia
+    {
+      id: "spot_outbreak",
+      name: "Outbreak Europe",
+      city: "Banská Bystrica",
+      country: "Slovakia",
+      crew: "The Legits",
+      type: "Jam",
+      image: "https://thelegitsblast.com/wp-content/uploads/2022/07/outbreak-europe.jpg",
+      lat: 48.74, lng: 19.15,
+      about: "Respected jam combining battles, concerts, workshops.",
+      reviews: [{ rating: 5, text: "Incredible vibe." }]
+    },
+  
+    // Switzerland
+    {
+      id: "spot_dpc",
+      name: "DPC Jam",
+      city: "Zurich",
+      country: "Switzerland",
+      crew: "DPC Academy",
+      type: "Jam",
+      image: "https://images.unsplash.com/photo-1520974735197-1b3a6f8d7bd2?auto=format&fit=crop&w=1200&q=60",
+      lat: 47.37, lng: 8.54,
+      about: "International 2vs2 battle with workshops and cyphers.",
+      reviews: [{ rating: 4, text: "Top‑level battles." }]
+    },
+    {
+      id: "spot_rosti",
+      name: "Rösti Summit",
+      city: "Bern",
+      country: "Switzerland",
+      crew: "Breakin Flavors",
+      type: "Cypher Jam",
+      image: "https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?auto=format&fit=crop&w=1200&q=60",
+      lat: 46.95, lng: 7.44,
+      about: "Grassroots cypher‑driven jam uniting Swiss and European breakers.",
+      reviews: [{ rating: 5, text: "Pure hip‑hop energy." }]
+    },
+  
+    // UK
+    {
+      id: "spot_breakinggb",
+      name: "Breaking GB Training Hub",
       city: "London",
       country: "UK",
-      crew: "Crew C",
-      image: "https://picsum.photos/seed/london/600/400",
-      lat: 51.52,
-      lng: -0.07,
-      about: "Street art hotspot with rotating murals and graffiti walls.",
-      reviews: [
-        { rating: 5, text: "Street art heaven!" },
-        { rating: 4, text: "Always something new." }
-      ]
+      crew: "Soul Mavericks",
+      type: "Training Spot",
+      image: "https://images.unsplash.com/photo-1520975713418-0e1bf1f1c6f6?auto=format&fit=crop&w=1200&q=60",
+      lat: 51.51, lng: -0.13,
+      about: "National training hub supporting UK breakers.",
+      reviews: [{ rating: 5, text: "Professional facilities." }]
     },
+  
+    // Germany
     {
-      name: "Wynwood Walls",
-      city: "Miami",
-      country: "USA",
-      crew: "Crew D",
-      image: "https://picsum.photos/seed/miami/600/400",
-      lat: 25.8,
-      lng: -80.2,
-      about: "Outdoor museum of international street artists.",
-      reviews: [
-        { rating: 5, text: "Mind-blowing visuals." },
-        { rating: 5, text: "A must-see for art lovers." }
-      ]
-    },
-    {
-      name: "Hosier Lane",
-      city: "Melbourne",
-      country: "Australia",
-      crew: "Crew E",
-      image: "https://picsum.photos/seed/melbourne/600/400",
-      lat: -37.816,
-      lng: 144.967,
-      about: "Famous laneway filled with graffiti and street art installations.",
-      reviews: [
-        { rating: 4, text: "Urban creativity at its best." },
-        { rating: 5, text: "Loved the vibe!" }
-      ]
-    },
-    {
-      name: "Rua Augusta",
-      city: "São Paulo",
-      country: "Brazil",
-      crew: "Crew F",
-      image: "https://picsum.photos/seed/saopaulo/600/400",
-      lat: -23.55,
-      lng: -46.63,
-      about: "Graffiti-lined street with political and cultural themes.",
-      reviews: [
-        { rating: 4, text: "Bold and expressive." },
-        { rating: 3, text: "Raw and real." }
-      ]
-    },
-    {
-      name: "Friedrichshain",
+      id: "spot_tempel",
+      name: "Tempelhofer Feld Floors",
       city: "Berlin",
       country: "Germany",
-      crew: "Crew A",
-      image: "https://picsum.photos/seed/friedrichshain/600/400",
-      lat: 52.51,
-      lng: 13.45,
-      about: "Alternative district with punk-inspired graffiti and murals.",
-      reviews: [
-        { rating: 4, text: "Grungy and authentic." },
-        { rating: 5, text: "Loved the energy!" }
-      ]
+      crew: "Berlin Breakers",
+      type: "Training Spot",
+      image: "https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=1200&q=60",
+      lat: 52.48, lng: 13.40,
+      about: "Smooth open floors and community sessions.",
+      reviews: [{ rating: 5, text: "Friendly sessions." }]
     },
     {
-      name: "Bushwick Collective",
-      city: "New York",
-      country: "USA",
-      crew: "Crew G",
-      image: "https://picsum.photos/seed/bushwick/600/400",
-      lat: 40.7,
-      lng: -73.9,
-      about: "Curated street art project with global artists.",
-      reviews: [
-        { rating: 5, text: "Incredible talent on display." },
-        { rating: 4, text: "Great walking tour." }
-      ]
+      id: "spot_factory",
+      name: "Munich Urban Factory",
+      city: "Munich",
+      country: "Germany",
+      crew: "Munich City Breakers",
+      type: "Training Spot",
+      image: "https://images.unsplash.com/photo-1504609813442-a8924e83f76e?auto=format&fit=crop&w=1200&q=60",
+      lat: 48.14, lng: 11.58,
+      about: "Indoor studio with open practice nights and cyphers.",
+      reviews: [{ rating: 4, text: "Great floors." }]
+    },
+  
+    // Italy
+    {
+      id: "spot_rome_cyphers",
+      name: "Rome Street Cyphers",
+      city: "Rome",
+      country: "Italy",
+      crew: "Rome City Rockers",
+      type: "Cypher Jam",
+      image: "https://images.unsplash.com/photo-1520975651611-8f48f6904a9f?auto=format&fit=crop&w=1200&q=60",
+      lat: 41.90, lng: 12.50,
+      about: "Open-air cyphers near cultural hubs, weekly sessions.",
+      reviews: [{ rating: 4, text: "Pure vibe." }]
     },
     {
-      name: "Ximending",
-      city: "Taipei",
-      country: "Taiwan",
-      crew: "Crew H",
-      image: "https://picsum.photos/seed/ximending/600/400",
-      lat: 25.04,
-      lng: 121.51,
-      about: "Youth district with anime-inspired graffiti and pop culture murals.",
-      reviews: [
-        { rating: 4, text: "Fun and colorful." },
-        { rating: 3, text: "Very busy but cool art." }
-      ]
+      id: "spot_milanhub",
+      name: "Milan Breaking Hub",
+      city: "Milan",
+      country: "Italy",
+      crew: "Bandits Crew",
+      type: "Training Spot",
+      image: "https://images.unsplash.com/photo-1515165562835-c3b8c8b7e6c3?auto=format&fit=crop&w=1200&q=60",
+      lat: 45.46, lng: 9.19,
+      about: "Community gym with daily practice and weekend cyphers.",
+      reviews: [{ rating: 5, text: "Solid training schedule." }]
     },
+  
+    // Spain
     {
-      name: "Valparaíso Hills",
-      city: "Valparaíso",
-      country: "Chile",
-      crew: "Crew I",
-      image: "https://picsum.photos/seed/valparaiso/600/400",
-      lat: -33.05,
-      lng: -71.62,
-      about: "Steep hills covered in murals and poetic graffiti.",
-      reviews: [
-        { rating: 5, text: "Breathtaking views and art." },
-        { rating: 4, text: "A visual feast." }
-      ]
-    }
-  ];
+      id: "spot_barcelona",
+      name: "Barcelona Beach Cyphers",
+      city: "Barcelona",
+      country: "Spain",
+      crew: "BCN Breakers",
+      type: "Cypher Jam",
+      image: "https://images.unsplash.com/photo-1500835556837-99ac94a94552?auto=format&fit=crop&w=1200&q=60",
+      lat: 41.39, lng: 2.17,
+      about: "Sunset cyphers by the beach, summer specials.",
+      reviews
