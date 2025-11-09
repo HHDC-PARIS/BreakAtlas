@@ -9,4 +9,5 @@ const spots = [
     type: "Jam",
     image: "https://picsum.photos/seed/boty/600/400",
     lat: 43.61,
-    lng:
+    lng: 3.87,
+    about: "The legendary European
