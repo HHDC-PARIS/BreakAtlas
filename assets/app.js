@@ -9,16 +9,19 @@ import {
 import { 
   getFirestore, 
   doc, 
-  getDoc, 
   setDoc, 
   onSnapshot, 
   updateDoc,
   arrayUnion,
-  arrayRemove
+  arrayRemove,
+  collection as firestoreCollection, // Renamed to avoid collision with global 'collections'
+  query,
+  getDocs
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app-check.js";
+
 
 // === INJECTED FIREBASE CONFIG ===
-// These variables are globally available in the environment.
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
 const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : undefined;
@@ -28,1013 +31,1001 @@ let app, auth, db, userId;
 let userDocRef;
 let userUnsubscribe = () => {}; // Function to detach onSnapshot listener
 
-try {
-    app = initializeApp(firebaseConfig);
-    db = getFirestore(app);
-    auth = getAuth(app);
-    console.log("Firebase Initialized");
-} catch (e) {
-    console.error("Error initializing Firebase:", e);
-    document.getElementById('authStatus').textContent = 'Firebase Init Error';
-}
-
-// === AUTHENTICATION ===
-onAuthStateChanged(auth, async (user) => {
-  if (user) {
-    userId = user.uid;
-    document.getElementById('authStatus').textContent = 'Authenticated';
-    document.getElementById('userIdDisplay').textContent = userId;
-    
-    // --- User Document Setup ---
-    // Path: /artifacts/{appId}/users/{userId}/profile/data
-    const userDocPath = `artifacts/${appId}/users/${userId}/profile/data`;
-    userDocRef = doc(db, userDocPath);
-
-    // Check if doc exists, if not, create it
-    const docSnap = await getDoc(userDocRef);
-    if (!docSnap.exists()) {
-      await setDoc(userDocRef, {
-        favorites: [],
-        collections: {},
-        activityFeed: [{ text: "Joined BreakAtlas", time: new Date().toISOString() }],
-        achievements: [],
-        themeColor: "#ff9f1c",
-        profileAvatar: "https://placehold.co/128x128/374151/f3f4f6?text=User"
-      });
-      console.log("Created new user profile document");
-    }
-    
-    // Detach any existing listener before attaching a new one
-    userUnsubscribe();
-    
-    // --- REAL-TIME DATA SYNC ---
-    // Listen for changes to the user's profile document
-    userUnsubscribe = onSnapshot(userDocRef, (doc) => {
-        const data = doc.data();
-        if (data) {
-            console.log("Received profile update from Firestore");
-            // Sync local state with Firestore
-            favorites = data.favorites || [];
-            collections = data.collections || {};
-            activityFeed = data.activityFeed || [];
-            achievements = data.achievements || [];
-            themeColor = data.themeColor || "#ff9f1c";
-            
-            // Update UI based on new data
-            initTheme(data.themeColor);
-            document.getElementById('profileAvatar').src = data.profileAvatar || "https://placehold.co/128x128/374151/f3f4f6?text=User";
-            
-            // Re-render components that depend on this data
-            if (currentView === "dashboard") {
-                renderSpots(spots); // Refresh cards for favorite status
-            } else if (currentView === "profile") {
-                renderProfileView(); // Full refresh of profile
-            }
-            renderLeaderboard(); // Based on favorites
-            renderChallenges(); // Based on state
-        }
-    });
-
-  } else {
-    // No user is signed in.
-    document.getElementById('authStatus').textContent = 'Not Authenticated';
-    document.getElementById('userIdDisplay').textContent = 'N/A';
-    userUnsubscribe(); // Detach listener
-    // Sign in anonymously or with custom token
-    try {
-        if (initialAuthToken) {
-            await signInWithCustomToken(auth, initialAuthToken);
-            console.log("Signed in with Custom Token");
-        } else {
-            await signInAnonymously(auth);
-            console.log("Signed in Anonymously");
-        }
-    } catch (error) {
-        console.error("Authentication Error:", error);
-        document.getElementById('authStatus').textContent = 'Auth Error';
-    }
-  }
-});
-
-
-// === APP STATE (Local) ===
+// Application State (Now defaults, overwritten by Firebase)
 let map;
 let markers = [];
 let currentView = "dashboard";
-let themeColor = "#ff9f1c"; // Default, will be overwritten by Firestore
-let spotToCollect = null; // Temp state for modal
+let userFavorites = [];
+let userCollections = {}; // { id: { name, description, spotIds: [] } }
+let userActivityFeed = [];
+let userAchievements = [];
+let themeColor = localStorage.getItem("themeColor") || "#ff9f1c";
+let chartType = localStorage.getItem("chartType") === 'pie'; // true for pie, false for bar
 
-// --- Firestore-Synced State (Defaults) ---
-// These are populated by the onSnapshot listener
-let favorites = [];
-let collections = {};
-let activityFeed = [];
-let achievements = [];
+// Logging Level
+setLogLevel('Debug');
 
-// === DOM READY ===
-document.addEventListener("DOMContentLoaded", () => {
-  lucide.createIcons(); // Render icons
-  
-  // Wait for Firebase auth to be ready before rendering
-  const authReadyCheck = setInterval(() => {
-      if (userId) {
-          clearInterval(authReadyCheck);
-          console.log("Auth ready, rendering app.");
-          // Initial render functions
-          initMap();
-          renderSpots(spots);
-          bindDashboardEvents();
-          bindProfileEvents();
-          bindStoryModeEvents();
-          bindNavEvents();
-          renderLeaderboard();
-          renderHallOfFame();
-          renderGlobalStats();
-          renderChallenges();
-      }
-  }, 100);
-});
 
-// === FIRESTORE HELPER FUNCTIONS ===
+/* --- FIREBASE AUTH & DATA LOADING --- */
 
 /**
- * Updates a field in the user's profile document on Firestore.
- * Uses 'updateDoc' for performance.
- * @param {object} payload - An object with fields to update (e.g., { favorites: newArray })
+ * Initializes Firebase, authenticates the user, and sets up real-time data listener.
  */
-async function updateUserDoc(payload) {
-  if (!userDocRef) {
-      console.error("User doc ref not ready!");
-      return;
-  }
-  try {
-      await updateDoc(userDocRef, payload);
-      // console.log("User doc updated:", payload);
-  } catch (e) {
-      console.error("Error updating user doc:", e);
-  }
+async function initFirebase() {
+    try {
+        app = initializeApp(firebaseConfig);
+        db = getFirestore(app);
+        auth = getAuth(app);
+        
+        // Authenticate using custom token or anonymously
+        if (initialAuthToken) {
+            await signInWithCustomToken(auth, initialAuthToken);
+        } else {
+            await signInAnonymously(auth);
+        }
+
+        // Set up the listener for auth state changes
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                userId = user.uid;
+                document.getElementById('userIdDisplay').textContent = `User ID: ${userId}`;
+                userDocRef = doc(db, "artifacts", appId, "users", userId, "profile", "data");
+                
+                // Load user data in real-time
+                userUnsubscribe = onSnapshot(userDocRef, (docSnap) => {
+                    if (docSnap.exists()) {
+                        const data = docSnap.data();
+                        userFavorites = data.favorites || [];
+                        userCollections = data.collections || {};
+                        userActivityFeed = data.activityFeed || [];
+                        userAchievements = data.achievements || [];
+                    } else {
+                        // Initialize user document if it doesn't exist
+                        setDoc(userDocRef, {
+                            favorites: userFavorites,
+                            collections: userCollections,
+                            activityFeed: userActivityFeed,
+                            achievements: userAchievements
+                        }, { merge: true });
+                    }
+                    // Re-render all elements dependent on user data
+                    renderSpotCards(spots);
+                    renderProfileView();
+                    renderLeaderboard();
+                    renderHallOfFame();
+                }, (error) => {
+                    console.error("Error listening to user data:", error);
+                });
+
+            } else {
+                // Should not happen in Canvas environment but useful for debugging
+                userId = 'anonymous';
+                document.getElementById('userIdDisplay').textContent = `User ID: Anonymous`;
+                userUnsubscribe(); // Stop listening if user logs out/changes
+            }
+        });
+
+    } catch (error) {
+        console.error("Firebase Initialization Error:", error);
+        document.getElementById('userIdDisplay').textContent = `Error: Cannot connect to DB`;
+    }
 }
+
 
 /**
- * Logs an activity to the activity feed in Firestore.
- * @param {string} text - The log message.
+ * Saves the current user data state to Firestore.
  */
-async function logActivity(text) {
-  if (!userDocRef) return;
-  
-  const entry = { text, time: new Date().toISOString() };
-  // Keep feed capped at 20 entries
-  const newFeed = [entry, ...activityFeed.slice(0, 19)]; 
-  
-  // We update the local state immediately for responsiveness
-  activityFeed = newFeed;
-  renderActivityFeed();
-  
-  // Then sync with Firestore
-  await updateUserDoc({ activityFeed: newFeed });
-}
-
-// === THEME HANDLING ===
-function initTheme(color) {
-  const picker = document.getElementById("themeColorPicker");
-  if (!color) color = themeColor; // Use state if no color passed
-  
-  if (picker) {
-    picker.value = color;
-    // This listener is now for Firestore updates
-    picker.addEventListener("input", (e) => {
-      themeColor = e.target.value;
-      document.documentElement.style.setProperty("--accent", themeColor);
-    });
-    
-    picker.addEventListener("change", (e) => {
-        // Only update Firestore on 'change' (when user is done)
-        logActivity(`Changed theme color to ${e.target.value}`);
-        updateUserDoc({ themeColor: e.target.value });
-    });
-  }
-  document.documentElement.style.setProperty("--accent", color);
-}
-
-// === MAP INITIALIZATION ===
-function initMap() {
-  map = L.map("map", {
-      zoomControl: false // Disable default zoom control
-  }).setView([50, 10], 4);
-  
-  // Use a dark tile layer
-  L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-    subdomains: 'abcd',
-    maxZoom: 19
-  }).addTo(map);
-
-  // Add zoom control to bottom right
-  L.control.zoom({
-      position: 'bottomright'
-  }).addTo(map);
-  
-  // Add custom icons
-  const iconJam = L.icon({ iconUrl: 'https://placehold.co/32x32/ff9f1c/ff9f1c.png', iconSize: [25, 25] });
-  const iconCypher = L.icon({ iconUrl: 'https://placehold.co/32x32/e71d36/e71d36.png', iconSize: [25, 25] });
-  const iconTraining = L.icon({ iconUrl: 'https://placehold.co/32x32/2ec4b6/2ec4b6.png', iconSize: [25, 25] });
-  const iconFavorite = L.icon({ iconUrl: 'https://placehold.co/32x32/ffffff/ffffff.png', iconSize: [25, 25] });
-  
-  window.mapIcons = {
-      Jam: iconJam,
-      Cypher: iconCypher,
-      Training: iconTraining,
-      Favorite: iconFavorite
-  };
-}
-
-/**
- * Gets the appropriate map icon for a spot type.
- * @param {string} type - The spot type (e.g., "Jam", "Cypher")
- * @returns {L.Icon} A Leaflet Icon object
- */
-function getIconForType(type) {
-    if (type.includes('Jam')) return window.mapIcons.Jam;
-    if (type.includes('Cypher')) return window.mapIcons.Cypher;
-    if (type.includes('Training')) return window.mapIcons.Training;
-    return window.mapIcons.Jam; // Default
-}
-
-// === SPOT RENDERING ===
-function renderSpots(list, filterType = null) {
-  const container = document.getElementById("cards");
-  if (!container) return;
-  container.innerHTML = "";
-
-  // Clear old markers
-  markers.forEach(m => map.removeLayer(m));
-  markers = [];
-  
-  const layerToggles = {
-      jam: document.getElementById('layerJams').checked,
-      cypher: document.getElementById('layerCyphers').checked,
-      training: document.getElementById('layerTraining').checked,
-      favorite: document.getElementById('layerFavorites').checked,
-  };
-
-  let visibleSpots = 0;
-  list.forEach((s) => {
-    const isFav = favorites.includes(s.id);
-    const spotTypeLower = s.type.toLowerCase();
-    
-    // --- Layer Filtering ---
-    let showOnMap = false;
-    if (layerToggles.jam && spotTypeLower.includes('jam')) showOnMap = true;
-    if (layerToggles.cypher && spotTypeLower.includes('cypher')) showOnMap = true;
-    if (layerToggles.training && spotTypeLower.includes('training')) showOnMap = true;
-    
-    // Favorite layer overrides others
-    if (layerToggles.favorite && isFav) showOnMap = true;
-    
-    // --- Card Filtering (from search) ---
-    // If a filterType is passed (from search), we only show matching cards.
-    // If no filterType, show all cards (respecting map toggle)
-    let showCard = true;
-    if (filterType && !spotTypeLower.includes(filterType)) {
-        showCard = false;
-    }
-    
-    // Render card
-    if (showCard) {
-        visibleSpots++;
-        const card = document.createElement("div");
-        card.className = "card bg-gray-800 rounded-lg shadow-lg overflow-hidden";
-        card.innerHTML = `
-          <img src="${s.image}" alt="${s.name}" class="w-full h-40 object-cover" />
-          <div class="p-4">
-            <h3 class="text-xl font-semibold mb-1">${s.name}</h3>
-            <p class="text-sm text-gray-400 mb-2">${s.city}, ${s.country} • <span class="font-medium" style="color:var(--accent);">${s.type}</span></p>
-            <p class="text-sm text-gray-300 mb-4 h-12 overflow-hidden">${s.about}</p>
-            <div class="card-actions flex gap-2 flex-wrap">
-              <button class="btn-secondary flex-1 text-sm py-2" onclick="window.zoomToSpot('${s.id}')"><i data-lucide="map-pin" class="w-4 h-4 mr-1 inline-block"></i>Zoom</button>
-              <button class="btn-secondary flex-1 text-sm py-2" onclick="window.shareSpot('${s.id}')"><i data-lucide="share-2" class="w-4 h-4 mr-1 inline-block"></i>Share</button>
-              <button class="btn-secondary flex-1 text-sm py-2 ${isFav ? 'text-yellow-400' : ''}" onclick="window.toggleFavorite('${s.id}')">
-                <i data-lucide="star" class="w-4 h-4 mr-1 inline-block ${isFav ? 'fill-current' : ''}"></i>${isFav ? "Saved" : "Save"}
-              </button>
-              <button class="btn-secondary flex-1 text-sm py-2" onclick="window.openCollectionModal('${s.id}')"><i data-lucide="plus-square" class="w-4 h-4 mr-1 inline-block"></i>Add</button>
-            </div>
-          </div>
-        `;
-        container.appendChild(card);
-    }
-
-    // Render marker (respects map toggles)
-    if (showOnMap) {
-        const icon = (layerToggles.favorite && isFav) ? window.mapIcons.Favorite : getIconForType(s.type);
-        const marker = L.marker([s.lat, s.lng], { icon: icon }).addTo(map);
-        marker.bindPopup(`<strong>${s.name}</strong><br>${s.city}, ${s.country}`);
-        marker.spotId = s.id;
-        markers.push(marker);
-    }
-  });
-  
-  if (visibleSpots === 0 && container.innerHTML === "") {
-      container.innerHTML = `<p class="text-gray-400 p-4">No spots found. Try adjusting your search or filters.</p>`;
-  }
-
-  lucide.createIcons(); // Re-render icons in new cards
-}
-
-// === MAP & CARD ACTIONS ===
-window.zoomToSpot = (spotId) => {
-  const s = spots.find(sp => sp.id === spotId);
-  if (s) {
-    map.setView([s.lat, s.lng], 13);
-    // Find marker and open popup
-    const marker = markers.find(m => m.spotId === spotId);
-    if (marker) {
-        marker.openPopup();
-    }
-  }
-}
-
-window.shareSpot = (spotId) => {
-  const s = spots.find(sp => sp.id === spotId);
-  if (!s) return;
-  
-  const text = `Check this out on BreakAtlas: ${s.name} — ${s.city}, ${s.country} (${s.type}).`;
-  const url = location.href;
-
-  if (navigator.share) {
-    navigator.share({ title: "BreakAtlas", text, url }).catch(() => {});
-    return;
-  }
-
-  // Fallback popup
-  const popup = document.getElementById("sharePopup");
-  const linksEl = document.getElementById("sharePopupLinks");
-  linksEl.innerHTML = `
-    <a href="https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}" target="_blank" rel="noopener" class="text-blue-400 hover:underline">Share on Twitter</a>
-    <a href="https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}" target="_blank" rel="noopener" class="text-blue-400 hover:underline">Share on Facebook</a>
-    <a href="https://api.whatsapp.com/send?text=${encodeURIComponent(text)}%20${encodeURIComponent(url)}" target="_blank" rel="noopener" class="text-blue-400 hover:underline">Share on WhatsApp</a>
-    <a href="https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}" target="_blank" rel="noopener" class="text-blue-400 hover:underline">Share on Telegram</a>
-  `;
-  popup.classList.remove("hidden");
-}
-
-window.closeSharePopup = () => {
-  document.getElementById("sharePopup").classList.add("hidden");
-}
-
-window.toggleFavorite = async (spotId) => {
-  const s = spots.find(sp => sp.id === spotId);
-  if (!s) return;
-  
-  const idx = favorites.indexOf(spotId);
-  if (idx >= 0) {
-    // Remove favorite
-    await updateUserDoc({ favorites: arrayRemove(spotId) });
-    logActivity(`Removed ${s.name} from favorites`);
-  } else {
-    // Add favorite
-    await updateUserDoc({ favorites: arrayUnion(spotId) });
-    logActivity(`Added ${s.name} to favorites`);
-    checkAchievement("fav_1");
-    checkAchievement("fav_5");
-  }
-  // UI updates are handled by the onSnapshot listener
-}
-
-// === MODAL MANAGEMENT ===
-function openModal(modalId) {
-  document.getElementById(modalId).classList.remove('hidden');
-}
-window.closeModal = (modalId) => {
-  document.getElementById(modalId).classList.add('hidden');
-}
-
-// --- Collection Modal ---
-window.openCollectionModal = (spotId) => {
-  spotToCollect = spotId;
-  const s = spots.find(sp => sp.id === spotId);
-  if (!s) return;
-  
-  document.getElementById('collectionModalSpotName').textContent = s.name;
-  const listEl = document.getElementById('collectionModalList');
-  listEl.innerHTML = "";
-  
-  if (Object.keys(collections).length === 0) {
-      listEl.innerHTML = `<p class="text-gray-400 text-sm">No collections yet. Create one below!</p>`;
-  } else {
-      for (const name in collections) {
-          const spotIds = collections[name] || [];
-          const alreadyAdded = spotIds.includes(spotId);
-          listEl.innerHTML += `
-            <button 
-              onclick="window.addSpotToCollection('${name}')" 
-              class="w-full text-left p-3 rounded-lg ${alreadyAdded ? 'bg-gray-600 cursor-not-allowed' : 'bg-gray-700 hover:bg-gray-600'}"
-              ${alreadyAdded ? 'disabled' : ''}
-            >
-              ${name} <span class="text-xs text-gray-400">(${spotIds.length} spots) ${alreadyAdded ? '- Added' : ''}</span>
-            </button>
-          `;
-      }
-  }
-  
-  openModal('collectionModal');
-}
-
-document.getElementById('collectionModalCreateBtn').onclick = () => {
-    const nameInput = document.getElementById('collectionModalNewName');
-    const name = nameInput.value.trim();
-    if (!name) return;
-    
-    const newCollections = { ...collections, [name]: [spotToCollect] };
-    updateUserDoc({ collections: newCollections });
-    
-    logActivity(`Created collection "${name}" and added ${spots.find(s=>s.id === spotToCollect).name}`);
-    checkAchievement("col_1");
-    checkAchievement("col_3");
-
-    nameInput.value = "";
-    closeModal('collectionModal');
-};
-
-window.addSpotToCollection = (name) => {
-    if (!collections[name] || collections[name].includes(spotToCollect)) return;
-    
-    const newSpotIds = [...collections[name], spotToCollect];
-    const newCollections = { ...collections, [name]: newSpotIds };
-    
-    updateUserDoc({ collections: newCollections });
-    logActivity(`Added ${spots.find(s=>s.id === spotToCollect).name} to "${name}"`);
-    closeModal('collectionModal');
-};
-
-// --- Rename Modal ---
-let oldCollectionName = null;
-window.openRenameModal = (name) => {
-    oldCollectionName = name;
-    document.getElementById('renameModalInput').value = name;
-    openModal('renameModal');
-}
-document.getElementById('renameModalSaveBtn').onclick = () => {
-    const newName = document.getElementById('renameModalInput').value.trim();
-    if (!newName || newName === oldCollectionName || collections[newName]) {
-        // Handle error (e.g., show a message)
-        console.error("Invalid new name or name already exists");
+function saveUserData() {
+    if (!userId || !userDocRef) {
+        console.warn("Attempted to save data before Firebase was ready.");
         return;
     }
-    
-    const newCollections = { ...collections };
-    newCollections[newName] = newCollections[oldCollectionName];
-    delete newCollections[oldCollectionName];
-    
-    updateUserDoc({ collections: newCollections });
-    logActivity(`Renamed collection "${oldCollectionName}" to "${newName}"`);
-    closeModal('renameModal');
-};
-
-// --- Delete Modal ---
-let collectionToDelete = null;
-window.openDeleteModal = (name) => {
-    collectionToDelete = name;
-    document.getElementById('deleteModalCollectionName').textContent = name;
-    openModal('deleteModal');
-}
-document.getElementById('deleteModalConfirmBtn').onclick = () => {
-    if (!collectionToDelete) return;
-    
-    const newCollections = { ...collections };
-    delete newCollections[collectionToDelete];
-    
-    updateUserDoc({ collections: newCollections });
-    logActivity(`Deleted collection "${collectionToDelete}"`);
-    collectionToDelete = null;
-    closeModal('deleteModal');
-};
-
-
-// === VIEW SWITCHING ===
-function showView(viewId) {
-  currentView = viewId;
-  document.querySelectorAll(".view").forEach(v => {
-    v.classList.remove("active-view");
-    v.classList.add("view");
-  });
-  const el = document.getElementById(viewId);
-  if (el) {
-    el.classList.add("active-view");
-    el.classList.remove("view");
-  }
-
-  // Refresh data on view switch
-  if (viewId === "profile") {
-    renderProfileView();
-  } else if (viewId === "leaderboardView") {
-    renderLeaderboard();
-    renderHallOfFame();
-    renderGlobalStats();
-  } else if (viewId === "dashboard") {
-    renderSpots(spots);
-    renderStatsChart();
-    // Invalidate map size to fix rendering issues
-    setTimeout(() => { if (map) map.invalidateSize() }, 100);
-  } else if (viewId === "storyMode") {
-    initStorySlides();
-  }
-  
-  // Close mobile menu
-  document.getElementById("mobileMenu").classList.add("hidden");
-}
-
-function bindNavEvents() {
-  document.querySelectorAll(".nav-link").forEach(link => {
-    link.addEventListener("click", (e) => {
-      e.preventDefault();
-      const viewId = e.currentTarget.dataset.view;
-      showView(viewId);
+    updateDoc(userDocRef, {
+        favorites: userFavorites,
+        collections: userCollections,
+        activityFeed: userActivityFeed,
+        achievements: userAchievements
+    }).catch(error => {
+        console.error("Error saving user data:", error);
     });
-  });
 }
 
-window.toggleMenu = () => {
-  document.getElementById("mobileMenu").classList.toggle("hidden");
-}
 
-// === DASHBOARD EVENTS ===
-function bindDashboardEvents() {
-  const search = document.getElementById("searchBar");
-  const resetBtn = document.getElementById("resetFilterBtn");
-  const summary = document.getElementById("filterSummary");
-  const toggleChartBtn = document.getElementById("toggleChartBtn");
+/* --- THEME & UTILITIES --- */
 
-  let usePie = false;
+function initTheme() {
+    const picker = document.getElementById("themeColorPicker");
+    const mobilePicker = document.getElementById("mobileThemeColorPicker");
+    
+    // Set initial theme color
+    document.documentElement.style.setProperty("--accent", themeColor);
+    document.documentElement.style.setProperty("--accent-hover", adjustColor(themeColor, 20));
 
-  search.addEventListener("input", () => {
-    const q = search.value.trim().toLowerCase();
-    if (!q) {
-      renderSpots(spots);
-      resetBtn.classList.add("hidden");
-      summary.classList.add("hidden");
-      summary.textContent = "";
-      return;
+    // Event listeners
+    const handleColorChange = (e) => {
+        themeColor = e.target.value;
+        const hoverColor = adjustColor(themeColor, 20);
+        document.documentElement.style.setProperty("--accent", themeColor);
+        document.documentElement.style.setProperty("--accent-hover", hoverColor);
+        localStorage.setItem("themeColor", themeColor);
+        logActivity(`Changed theme color to ${themeColor}`);
+        // Keep both pickers in sync
+        if (picker) picker.value = themeColor;
+        if (mobilePicker) mobilePicker.value = themeColor;
+    };
+
+    if (picker) {
+        picker.value = themeColor;
+        picker.addEventListener("input", handleColorChange);
     }
-    const filtered = spots.filter(s =>
-      s.name.toLowerCase().includes(q) ||
-      s.city.toLowerCase().includes(q) ||
-      s.country.toLowerCase().includes(q) ||
-      s.type.toLowerCase().includes(q) ||
-      s.crew.toLowerCase().includes(q)
-    );
-    renderSpots(filtered);
-    resetBtn.classList.remove("hidden");
-    summary.classList.remove("hidden");
-    summary.textContent = `Filtered: ${filtered.length} of ${spots.length} for "${q}"`;
-  });
+    if (mobilePicker) {
+        mobilePicker.value = themeColor;
+        mobilePicker.addEventListener("input", handleColorChange);
+    }
+}
 
-  resetBtn.addEventListener("click", () => {
-    search.value = "";
-    renderSpots(spots);
-    resetBtn.classList.add("hidden");
-    summary.classList.add("hidden");
-    summary.textContent = "";
-  });
+/**
+ * Adjusts a hex color (lightens/darkens).
+ * @param {string} hex - The hex color string.
+ * @param {number} amount - Amount to lighten (positive) or darken (negative).
+ * @returns {string} The new hex color string.
+ */
+function adjustColor(hex, amount) {
+    let R = parseInt(hex.substring(1, 3), 16);
+    let G = parseInt(hex.substring(3, 5), 16);
+    let B = parseInt(hex.substring(5, 7), 16);
 
-  toggleChartBtn.addEventListener("click", () => {
-    usePie = !usePie;
-    toggleChartBtn.innerHTML = usePie 
-        ? `<i data-lucide="bar-chart-2" class="w-4 h-4 mr-1 inline-block"></i>Switch to Bar`
-        : `<i data-lucide="pie-chart" class="w-4 h-4 mr-1 inline-block"></i>Switch to Pie`;
+    R = Math.min(255, R + amount);
+    G = Math.min(255, G + amount);
+    B = Math.min(255, B + amount);
+
+    const RR = ((R.toString(16).length == 1) ? "0" + R.toString(16) : R.toString(16));
+    const GG = ((G.toString(16).length == 1) ? "0" + G.toString(16) : G.toString(16));
+    const BB = ((B.toString(16).length == 1) ? "0" + B.toString(16) : B.toString(16));
+
+    return "#" + RR + GG + BB;
+}
+
+// Make global
+// window.showView = function(viewId) {
+// MODIFICATION: Removed window. assignment
+function showView(viewId) {
+    document.querySelectorAll(".view").forEach(view => {
+        view.style.display = "none";
+    });
+    const view = document.getElementById(viewId);
+    if (view) {
+        view.style.display = "block";
+        currentView = viewId;
+    }
+    // Re-render the profile view if we switch to it
+    if (viewId === 'profile') {
+        renderProfileView();
+    }
+    // Re-render icons on view change for robustness
     lucide.createIcons();
-    renderStatsChart(usePie);
-  });
-  
-  // Map layer toggles
-  document.querySelectorAll('.map-layer-toggle').forEach(toggle => {
-      toggle.addEventListener('change', () => renderSpots(spots));
-  });
-
-  // Initial chart render
-  renderStatsChart(usePie);
+    toggleMenu(true); // Close mobile menu if open
 }
 
-// === PROFILE EVENTS ===
-function bindProfileEvents() {
-  const avatarUpload = document.getElementById("avatarUpload");
-  const createCollectionBtn = document.getElementById("createCollectionBtn");
+// window.toggleMenu = function(forceClose = false) {
+// MODIFICATION: Removed window. assignment
+function toggleMenu(forceClose = false) {
+    const mobileMenu = document.getElementById('mobileMenu');
+    
+    if (forceClose) {
+        mobileMenu.classList.add('hidden');
+    } else {
+        // Toggle mobile menu visibility
+        const isHidden = mobileMenu.classList.contains('hidden');
+        if (isHidden) {
+            mobileMenu.classList.remove('hidden');
+        } else {
+            mobileMenu.classList.add('hidden');
+        }
+    }
+}
 
-  if (avatarUpload) {
-    avatarUpload.addEventListener("change", (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        const imgData = ev.target.result;
-        // Optimistic update for UI
-        document.getElementById("profileAvatar").src = imgData;
-        // Update Firestore
-        updateUserDoc({ profileAvatar: imgData });
-        logActivity("Updated profile avatar");
-      };
-      reader.readAsDataURL(file);
+
+/**
+ * Logs an activity entry to the user's activity feed in Firestore.
+ * @param {string} message - The message to log.
+ */
+function logActivity(message) {
+    const timestamp = new Date().toISOString();
+    const newActivity = { message, timestamp };
+    
+    // Add to local state (will be refreshed by onSnapshot, but useful for immediate feedback)
+    userActivityFeed.unshift(newActivity);
+    
+    // Limit to 20 activities
+    userActivityFeed = userActivityFeed.slice(0, 20);
+
+    saveUserData();
+    
+    // Re-render profile view to update the feed immediately
+    if (currentView === 'profile') {
+        renderProfileView();
+    }
+}
+
+
+/* --- MAP LOGIC --- */
+
+function initMap() {
+    if (map) map.remove(); // Remove existing map if re-initializing
+
+    map = L.map('map').setView([48.85, 2.35], 5); // Centered on Paris, moderate zoom
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href="http://osm.org/copyright">OpenStreetMap</a> contributors'
+    }).addTo(map);
+
+    renderMapMarkers(spots);
+}
+
+function renderMapMarkers(spotList) {
+    markers.forEach(marker => map.removeLayer(marker));
+    markers = [];
+
+    spotList.forEach(spot => {
+        const marker = L.marker([spot.lat, spot.lng]).addTo(map);
+        marker.on('click', () => showSpotModal(spot.id));
+        markers.push(marker);
     });
-  }
+}
 
-  if (createCollectionBtn) {
-    createCollectionBtn.addEventListener("click", () => {
-      const nameInput = document.getElementById("newCollectionName");
-      const name = nameInput.value.trim();
-      if (!name || collections[name]) return;
-      
-      const newCollections = { ...collections, [name]: [] };
-      updateUserDoc({ collections: newCollections });
-      
-      logActivity(`Created collection "${name}"`);
-      checkAchievement("col_1");
-      checkAchievement("col_3");
-      
-      nameInput.value = "";
-      // UI update via onSnapshot
+
+/* --- DASHBOARD LOGIC --- */
+
+function bindDashboardEvents() {
+    document.getElementById('spotSearch').addEventListener('input', filterSpots);
+    document.getElementById('spotFilter').addEventListener('change', filterSpots);
+}
+
+function filterSpots() {
+    const searchTerm = document.getElementById('spotSearch').value.toLowerCase();
+    const filterType = document.getElementById('spotFilter').value;
+
+    const filteredSpots = spots.filter(spot => {
+        const matchesSearch = spot.name.toLowerCase().includes(searchTerm) ||
+                              spot.city.toLowerCase().includes(searchTerm) ||
+                              spot.country.toLowerCase().includes(searchTerm) ||
+                              spot.crew.toLowerCase().includes(searchTerm);
+        
+        const matchesType = filterType === 'all' || spot.type === filterType;
+
+        return matchesSearch && matchesType;
     });
-  }
+
+    renderSpotCards(filteredSpots);
+    renderMapMarkers(filteredSpots);
 }
 
-// === STORY MODE ===
-let storyIndex = 0;
-function bindStoryModeEvents() {
-  const prev = document.getElementById("prevSlide");
-  const next = document.getElementById("nextSlide");
-  const exit = document.getElementById("exitStory");
+function renderSpotCards(spotList) {
+    const grid = document.getElementById('spotGrid');
+    if (!grid) return;
+    grid.innerHTML = '';
 
-  if (prev && next && exit) {
-    prev.addEventListener("click", () => changeSlide(-1));
-    next.addEventListener("click", () => changeSlide(1));
-    exit.addEventListener("click", () => showView("dashboard"));
-  }
+    spotList.forEach(spot => {
+        const isFavorite = userFavorites.includes(spot.id);
+        const favIcon = isFavorite ? 'heart-handshake' : 'heart';
+        const card = document.createElement('div');
+        card.className = 'spot-card bg-white p-4 rounded-xl shadow-lg border border-gray-200 flex flex-col hover:border-accent cursor-pointer';
+        card.innerHTML = `
+            <img src="${spot.image}" onerror="this.onerror=null;this.src='https://placehold.co/800x500/e5e7eb/9ca3af?text=Image+Unavailable'" alt="${spot.name}" class="w-full h-32 object-cover rounded-lg mb-4">
+            <h3 class="text-xl font-semibold mb-1 truncate text-gray-900">${spot.name}</h3>
+            <p class="text-sm text-gray-500 mb-3">${spot.city}, ${spot.country} (${spot.type})</p>
+            <p class="text-gray-700 text-sm flex-grow mb-4 line-clamp-3">${spot.about}</p>
+            <div class="flex justify-between items-center mt-auto">
+                <button class="btn-secondary py-1.5 px-3 text-sm flex items-center space-x-1 spot-details-btn" data-spot-id="${spot.id}">
+                    <i data-lucide="info" class="w-4 h-4"></i> <span>Details</span>
+                </button>
+                <button class="text-gray-500 hover:text-red-500 transition spot-favorite-btn" data-spot-id="${spot.id}">
+                    <i data-lucide="${favIcon}" class="w-5 h-5 ${isFavorite ? 'text-red-500 fill-red-500' : ''}"></i>
+                </button>
+            </div>
+        `;
+        grid.appendChild(card);
+    });
+
+    // MODIFICATION: Add event listeners for new buttons
+    grid.querySelectorAll('.spot-details-btn').forEach(btn => {
+        btn.addEventListener('click', () => showSpotModal(btn.dataset.spotId));
+    });
+    grid.querySelectorAll('.spot-favorite-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => toggleFavorite(btn.dataset.spotId, e));
+    });
+
+
+    lucide.createIcons(); // Re-render icons after adding cards
 }
 
-function initStorySlides() {
-  storyIndex = 0;
-  renderStorySlide();
-}
+// Make global
+// window.toggleFavorite = function(spotId, event) {
+// MODIFICATION: Removed window. assignment, added function keyword
+function toggleFavorite(spotId, event) {
+    event.stopPropagation(); // Prevent the card click/modal from triggering
+    const index = userFavorites.indexOf(spotId);
+    let action = '';
 
-function changeSlide(delta) {
-  storyIndex = (storyIndex + delta + storySlidesData.length) % storySlidesData.length;
-  renderStorySlide();
-}
+    if (index > -1) {
+        userFavorites.splice(index, 1);
+        action = 'unfavorited';
+    } else {
+        userFavorites.push(spotId);
+        action = 'favorited';
+        // Check for 'First Favorite' achievement
+        if (userFavorites.length === 1 && !userAchievements.includes('First Favorite')) {
+             userAchievements.push('First Favorite');
+             logActivity(`Achieved: First Favorite!`);
+        }
+    }
 
-function renderStorySlide() {
-  const container = document.getElementById("storySlides");
-  const dotsContainer = document.getElementById("storyDots");
-  const slide = storySlidesData[storyIndex];
-  container.innerHTML = `
-    <div class="p-6 md:p-10 text-center">
-      <img src="${slide.image}" alt="${slide.title}" class="w-full h-48 object-contain mb-6 rounded-lg"/>
-      <h3 class="text-2xl font-bold mb-4" style="color:var(--accent);">${slide.title}</h3>
-      <p class="text-gray-300 max-w-lg mx-auto">${slide.text}</p>
-    </div>
-  `;
-  
-  // Render dots
-  dotsContainer.innerHTML = "";
-  storySlidesData.forEach((_, i) => {
-      dotsContainer.innerHTML += `
-        <button class_name="w-3 h-3 rounded-full ${i === storyIndex ? 'bg-white' : 'bg-gray-600'}" onclick="window.setStorySlide(${i})"></button>
-      `;
-  });
-  
-  // Update buttons
-  document.getElementById('prevSlide').classList.toggle('opacity-50', storyIndex === 0);
-  const nextBtn = document.getElementById('nextSlide');
-  if (storyIndex === storySlidesData.length - 1) {
-      nextBtn.innerHTML = `Finish <i data-lucide="check" class="w-5 h-5 ml-1 inline-block"></i>`;
-      nextBtn.onclick = () => showView("dashboard");
-  } else {
-      nextBtn.innerHTML = `Next <i data-lucide="arrow-right" class="w-5 h-5 ml-1 inline-block"></i>`;
-      nextBtn.onclick = () => changeSlide(1);
-  }
-  lucide.createIcons();
-}
+    const spot = spots.find(s => s.id === spotId);
+    logActivity(`${action} the spot: ${spot.name}`);
 
-window.setStorySlide = (index) => {
-    storyIndex = index;
-    renderStorySlide();
+    saveUserData();
 }
 
 
-// === LEADERBOARD & STATS ===
-function renderLeaderboard() {
-  const el = document.getElementById("leaderboard");
-  if (!el) return;
-  el.innerHTML = "";
+/* --- MODAL LOGIC --- */
 
-  // Example: count favorites by country
-  const counts = {};
-  favorites.forEach(id => {
-    const s = spots.find(sp => sp.id === id);
-    if (!s) return;
-    counts[s.country] = (counts[s.country] || 0) + 1;
-  });
+// Make global
+// window.showModal = function(id) {
+// MODIFICATION: Removed window. assignment, added function keyword
+function showModal(id) {
+    const modal = document.getElementById(id);
+    if (modal) modal.classList.remove('hidden');
+}
 
-  const entries = Object.keys(counts).map(country => ({ country, score: counts[country] }))
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 6);
+// Make global
+// window.closeModal = function(id) {
+// MODIFICATION: Removed window. assignment, added function keyword
+function closeModal(id) {
+    const modal = document.getElementById(id);
+    if (modal) modal.classList.add('hidden');
+}
 
-  if (entries.length === 0) {
-    el.innerHTML = `<div class="bg-gray-800 p-4 rounded-lg text-gray-400 md:col-span-3">No leaderboard data yet — add favorites to see rankings.</div>`;
-    return;
-  }
+// Make global
+// window.showSpotModal = function(spotId) {
+// MODIFICATION: Removed window. assignment, added function keyword
+function showSpotModal(spotId) {
+    const spot = spots.find(s => s.id === spotId);
+    if (!spot) return;
 
-  entries.forEach((e, i) => {
-    const card = document.createElement("div");
-    card.className = "leader-card bg-gray-800 p-4 rounded-lg flex items-center space-x-4";
-    card.innerHTML = `
-      <span class="text-3xl font-bold ${i === 0 ? 'text-yellow-400' : (i === 1 ? 'text-gray-300' : 'text-yellow-600')}">#${i + 1}</span>
-      <div>
-        <h4 class="text-lg font-semibold">${e.country}</h4>
-        <p class="text-sm" style="color:var(--accent);">${e.score} Favorites</p>
-      </div>
+    // Update main spot details
+    document.getElementById('spotModalTitle').textContent = spot.name;
+    document.getElementById('spotModalImage').src = spot.image;
+    document.getElementById('spotModalDetails').textContent = spot.about;
+    document.getElementById('spotModalType').textContent = spot.type;
+    document.getElementById('spotModalCrew').textContent = spot.crew;
+
+    // Update favorite button state
+    const isFavorite = userFavorites.includes(spotId);
+    const favBtn = document.getElementById('spotModalFavoriteBtn');
+    favBtn.dataset.spotId = spotId;
+    favBtn.innerHTML = isFavorite 
+        ? `<i data-lucide="heart-handshake" class="w-5 h-5 fill-red-500"></i> <span>Favorited</span>` 
+        : `<i data-lucide="heart" class="w-5 h-5"></i> <span>Favorite</span>`;
+    favBtn.onclick = (e) => {
+        toggleFavorite(spotId, e);
+        closeModal('spotModal'); // Close after favoriting
+    };
+
+    // Update share button
+    const shareBtn = document.getElementById('spotModalShareBtn');
+    shareBtn.dataset.spotId = spotId;
+    shareBtn.onclick = () => shareSpot(spotId);
+
+    // Render reviews
+    const reviewList = document.getElementById('spotModalReviews');
+    reviewList.innerHTML = spot.reviews.map(r => `
+        <li class="p-3 bg-gray-100 rounded-lg border border-gray-200">
+            <div class="text-yellow-500 text-lg">${'★'.repeat(r.rating)}${'☆'.repeat(5 - r.rating)}</div>
+            <p class="text-sm mt-1 text-gray-800">${r.text}</p>
+        </li>
+    `).join('');
+    if (spot.reviews.length === 0) {
+        reviewList.innerHTML = '<li class="text-gray-500 italic">No reviews yet.</li>';
+    }
+
+    // Render 'Add to Collection' buttons
+    const collectionAddButtons = document.getElementById('collectionAddButtons');
+    collectionAddButtons.innerHTML = '';
+    
+    Object.entries(userCollections).forEach(([id, collection]) => {
+        const isSpotInCollection = collection.spotIds.includes(spotId);
+        const btn = document.createElement('button');
+        btn.className = isSpotInCollection ? 'btn-primary py-1.5 px-3 text-xs' : 'btn-secondary py-1.5 px-3 text-xs';
+        btn.textContent = isSpotInCollection ? `${collection.name} (Added)` : collection.name;
+        btn.disabled = isSpotInCollection;
+        btn.onclick = () => toggleSpotInCollection(spotId, id, true);
+        collectionAddButtons.appendChild(btn);
+    });
+
+    // Add listener for collection button click
+    lucide.createIcons();
+    showModal('spotModal');
+}
+
+function shareSpot(spotId) {
+    const spot = spots.find(s => s.id === spotId);
+    if (!spot) return;
+    const shareText = `Check out this breaking spot: ${spot.name} in ${spot.city}, ${spot.country}! Details: ${spot.about}`;
+
+    if (navigator.share) {
+        navigator.share({
+            title: 'BreakAtlas Spot',
+            text: shareText,
+            url: window.location.href // Use current URL as a fallback/context
+        }).then(() => {
+            logActivity(`Shared spot: ${spot.name}`);
+        }).catch((error) => {
+            console.error('Sharing failed', error);
+        });
+    } else {
+        // Fallback for browsers without Web Share API (like Canvas)
+        showSharePopup(spot.name, shareText);
+    }
+}
+
+function showSharePopup(title, text) {
+    const popup = document.getElementById('sharePopup');
+    const linksDiv = document.getElementById('sharePopupLinks');
+    linksDiv.innerHTML = `
+        <p class="text-sm text-gray-500">Copy the text below:</p>
+        <textarea class="w-full h-24 p-2 bg-gray-100 rounded-lg text-gray-800 border border-gray-300" readonly>${text}</textarea>
+        <button id="copyShareLinkBtn" class="btn-primary w-full text-sm">Copy Link Text</button>
     `;
-    el.appendChild(card);
-  });
+    // MODIFICATION: Add event listener for copy button
+    document.getElementById('copyShareLinkBtn').addEventListener('click', () => copyToClipboard(text.replace(/'/g, "\\'")));
+    popup.classList.remove('hidden');
 }
 
-function renderHallOfFame() {
-  const el = document.getElementById("hallOfFame");
-  if (!el) return;
-  el.innerHTML = "";
-  
-  crews.slice(0, 6).forEach(c => {
-    const card = document.createElement("div");
-    card.className = "fame-card bg-gray-800 p-4 rounded-lg";
-    card.innerHTML = `
-      <h4 class="text-lg font-semibold">${c.name}</h4>
-      <p class="text-sm font-medium mb-2" style="color:var(--accent);">${c.country}</p>
-      <p class="text-sm text-gray-400">${c.about}</p>
-    `;
-    el.appendChild(card);
-  });
+// Make global
+// window.closeSharePopup = function() {
+// MODIFICATION: Removed window. assignment, added function keyword
+function closeSharePopup() {
+    document.getElementById('sharePopup').classList.add('hidden');
 }
 
-function renderGlobalStats() {
-  const el = document.getElementById("globalStats");
-  if (!el) return;
-
-  const stats = [
-    { title: "Total Spots", value: spots.length, icon: "map" },
-    { title: "Jams", value: countType("Jam"), icon: "disc" },
-    { title: "Cyphers", value: countType("Cypher"), icon: "radio" },
-    { title: "Training", value: countType("dumbbell"), icon: "dumbbell" },
-  ];
-
-  el.innerHTML = stats.map(c => `
-    <div class="stat-card bg-gray-800 p-4 rounded-lg flex items-center space-x-4">
-        <i data-lucide="${c.icon}" class="w-8 h-8" style="color:var(--accent);"></i>
-        <div>
-            <h4 class="text-2xl font-bold">${c.value}</h4>
-            <p class="text-sm text-gray-400">${c.title}</p>
-        </div>
-    </div>
-  `).join('');
-  lucide.createIcons();
+// Make global
+// window.copyToClipboard = function(text) {
+// MODIFICATION: Removed window. assignment, added function keyword
+function copyToClipboard(text) {
+    // Standard clipboard API not reliable in all iframes, so use execCommand fallback
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    document.body.appendChild(textarea);
+    textarea.select();
+    try {
+        document.execCommand('copy');
+        alertUser('Copied to clipboard!', 'success'); // Simple user feedback
+    } catch (err) {
+        console.error('Failed to copy text', err);
+        alertUser('Failed to copy text.', 'error');
+    }
+    document.body.removeChild(textarea);
 }
 
-// === PROFILE VIEW RENDERING ===
+function alertUser(message, type = 'info') {
+    // Since we cannot use alert(), this is a placeholder for a better UI notification system
+    console.log(`[Alert] ${type.toUpperCase()}: ${message}`);
+}
 
-// This function re-renders the whole profile view
+/* --- COLLECTION MANAGEMENT (MODAL INTEGRATION) --- */
+
+// Make global
+// window.showCollectionModal = function(mode, collectionId = null) {
+// MODIFICATION: Removed window. assignment, added function keyword
+function showCollectionModal(mode, collectionId = null) {
+    const titleEl = document.getElementById('collectionModalTitle');
+    const nameInput = document.getElementById('collectionNameInput');
+    const descInput = document.getElementById('collectionDescriptionInput');
+    const idInput = document.getElementById('collectionIdInput');
+    const confirmBtn = document.getElementById('collectionModalConfirmBtn');
+
+    if (mode === 'create') {
+        titleEl.textContent = 'Create New Collection';
+        nameInput.value = '';
+        descInput.value = '';
+        idInput.value = '';
+        confirmBtn.textContent = 'Create Collection';
+        confirmBtn.onclick = () => handleCollectionAction('create');
+    } else if (mode === 'edit' && collectionId) {
+        const collection = userCollections[collectionId];
+        if (!collection) return;
+        titleEl.textContent = `Edit Collection: ${collection.name}`;
+        nameInput.value = collection.name;
+        descInput.value = collection.description || '';
+        idInput.value = collectionId;
+        confirmBtn.textContent = 'Save Changes';
+        confirmBtn.onclick = () => handleCollectionAction('edit', collectionId);
+    }
+
+    showModal('collectionModal');
+}
+
+// Make global
+// window.showDeleteModal = function(collectionId) {
+// MODIFICATION: Removed window. assignment, added function keyword
+function showDeleteModal(collectionId) {
+    const collection = userCollections[collectionId];
+    if (!collection) return;
+
+    document.getElementById('deleteModalCollectionName').textContent = collection.name;
+    const confirmBtn = document.getElementById('deleteModalConfirmBtn');
+    confirmBtn.onclick = () => handleCollectionAction('delete', collectionId);
+
+    showModal('deleteModal');
+}
+
+function handleCollectionAction(action, collectionId = null) {
+    const nameInput = document.getElementById('collectionNameInput');
+    const descInput = document.getElementById('collectionDescriptionInput');
+
+    if (action === 'create' || action === 'edit') {
+        const name = nameInput.value.trim();
+        const description = descInput.value.trim();
+
+        if (!name) {
+            alertUser('Collection name cannot be empty.', 'error');
+            return;
+        }
+
+        if (action === 'create') {
+            const newId = crypto.randomUUID(); // Generate unique ID
+            userCollections[newId] = {
+                name: name,
+                description: description,
+                spotIds: [],
+                createdAt: new Date().toISOString()
+            };
+            logActivity(`Created collection: ${name}`);
+        } else if (action === 'edit' && collectionId) {
+            userCollections[collectionId].name = name;
+            userCollections[collectionId].description = description;
+            logActivity(`Edited collection: ${name}`);
+        }
+    } else if (action === 'delete' && collectionId) {
+        const name = userCollections[collectionId]?.name || 'Unknown Collection';
+        delete userCollections[collectionId];
+        logActivity(`Deleted collection: ${name}`);
+    } else {
+        return;
+    }
+
+    saveUserData();
+    closeModal('collectionModal');
+    closeModal('deleteModal');
+    renderProfileView(); // Re-render collections section
+}
+
+/**
+ * Adds or removes a spot from a collection. Called from spot modal.
+ */
+function toggleSpotInCollection(spotId, collectionId) {
+    const collection = userCollections[collectionId];
+    if (!collection) return;
+
+    const index = collection.spotIds.indexOf(spotId);
+    let action = '';
+
+    if (index > -1) {
+        collection.spotIds.splice(index, 1);
+        action = 'Removed from';
+    } else {
+        collection.spotIds.push(spotId);
+        action = 'Added to';
+    }
+    
+    // Update local state (which is then saved)
+    userCollections[collectionId] = collection; 
+    
+    const spot = spots.find(s => s.id === spotId);
+    logActivity(`${action} collection: ${collection.name} spot: ${spot.name}`);
+
+    saveUserData();
+    
+    // Update the spot modal buttons and close
+    closeModal('spotModal');
+}
+
+
+/* --- PROFILE VIEW RENDERING --- */
+
 function renderProfileView() {
-    renderProfileFavorites();
     renderCollections();
-    renderAchievements();
     renderActivityFeed();
-    renderChallenges();
-}
-
-function renderProfileFavorites() {
-  const el = document.getElementById("profileFavorites");
-  if (!el) return;
-  el.innerHTML = "";
-  
-  if (favorites.length === 0) {
-      el.innerHTML = `<li class="text-gray-400 text-sm p-3 bg-gray-700 rounded-lg">No favorites added yet.</li>`;
-      return;
-  }
-  
-  favorites.forEach(id => {
-    const s = spots.find(sp => sp.id === id);
-    if (!s) return;
-    const li = document.createElement("li");
-    li.className = "flex justify-between items-center p-3 bg-gray-700 rounded-lg";
-    li.innerHTML = `
-        <span>
-            <strong class="text-gray-100">${s.name}</strong>
-            <span class="text-gray-400 text-sm"> — ${s.city}</span>
-        </span>
-        <button onclick="window.zoomToSpot('${s.id}')" class="p-1 hover:text-white" style="color:var(--accent);"><i data-lucide="map-pin" class="w-4 h-4"></i></button>
-    `;
-    el.appendChild(li);
-  });
-  lucide.createIcons();
+    renderChart();
+    renderAchievements();
 }
 
 function renderCollections() {
-  const el = document.getElementById("profileCollections");
-  if (!el) return;
-  el.innerHTML = "";
-  
-  if (Object.keys(collections).length === 0) {
-      el.innerHTML = `<p class="text-gray-400 text-sm p-3 bg-gray-700 rounded-lg md:col-span-2">No collections created yet.</p>`;
-      return;
-  }
-
-  Object.keys(collections).forEach(name => {
-    const items = collections[name] || [];
-    const div = document.createElement("div");
-    div.className = "collection-card bg-gray-700 p-4 rounded-lg";
-    div.innerHTML = `
-      <h4 class="text-lg font-semibold mb-2">${name}</h4>
-      <p class="text-sm text-gray-400 mb-4">${items.length} spots</p>
-      <div class="flex gap-2">
-        <button onclick="window.openRenameModal('${name}')" class="btn-secondary text-sm py-1 px-3 flex-1"><i data-lucide="edit-2" class="w-4 h-4 mr-1 inline-block"></i>Rename</button>
-        <button onclick="window.openDeleteModal('${name}')" class="btn-secondary text-sm py-1 px-3 flex-1 hover:bg-red-700"><i data-lucide="trash-2" class="w-4 h-4 mr-1 inline-block"></i>Delete</button>
-      </div>
-    `;
-    el.appendChild(div);
-  });
-  lucide.createIcons();
-}
-
-// --- Achievements ---
-const achievementDefs = {
-    "fav_1": { title: "First Favorite", desc: "Save your first spot", check: () => favorites.length >= 1, icon: "star" },
-    "fav_5": { title: "Collector", desc: "Save 5 favorite spots", check: () => favorites.length >= 5, icon: "archive" },
-    "col_1": { title: "Curator", desc: "Create your first collection", check: () => Object.keys(collections).length >= 1, icon: "bookmark" },
-    "col_3": { title: "Archivist", desc: "Create 3 collections", check: () => Object.keys(collections).length >= 3, icon: "book" },
-    "visit_jam": { title: "Jam Explorer", desc: "Explore a Jam (demo)", check: () => false, icon: "disc" }, // Example for future
-};
-
-function checkAchievement(id) {
-    if (!achievements.includes(id) && achievementDefs[id].check()) {
-        const newAchievements = [...achievements, id];
-        updateUserDoc({ achievements: newAchievements });
-        logActivity(`Unlocked achievement: ${achievementDefs[id].title}`);
-    }
-}
-
-function renderAchievements() {
-  const el = document.getElementById("profileAchievements");
-  const progressEl = document.getElementById("achievementProgress");
-  if (!el || !progressEl) return;
-  el.innerHTML = "";
-
-  Object.keys(achievementDefs).forEach(id => {
-    const d = achievementDefs[id];
-    const achieved = achievements.includes(id) || d.check();
+    const container = document.getElementById('profileCollections');
+    const noMessage = document.getElementById('noCollectionsMessage');
+    container.innerHTML = '';
     
-    const card = document.createElement("div");
-    card.className = `achievement-card p-4 rounded-lg flex flex-col items-center text-center ${achieved ? 'bg-gray-700' : 'bg-gray-700 opacity-50'}`;
-    card.innerHTML = `
-        <div class="p-3 rounded-full mb-2" style="background-color: ${achieved ? 'var(--accent)' : '#4b5563'};">
-            <i data-lucide="${d.icon}" class="w-6 h-6 ${achieved ? 'text-gray-900' : 'text-gray-400'}"></i>
-        </div>
-        <h4 class="font-semibold">${d.title}</h4>
-        <p class="text-xs text-gray-400">${d.desc}</p>
-    `;
-    el.appendChild(card);
-  });
-  
-  lucide.createIcons();
-  progressEl.innerHTML = `<p>Achievements unlocked: ${achievements.length} / ${Object.keys(achievementDefs).length}</p>`;
-}
+    const collectionEntries = Object.entries(userCollections);
 
-// --- Challenges (Dynamic) ---
-function renderChallenges() {
-  const el = document.getElementById("challenges");
-  if (!el) return;
+    if (collectionEntries.length === 0) {
+        noMessage.classList.remove('hidden');
+        return;
+    }
+    noMessage.classList.add('hidden');
 
-  const list = [
-    { title: "Save 5 favorites", current: favorites.length, target: 5 },
-    { title: "Create 2 collections", current: Object.keys(collections).length, target: 2 },
-    { title: "Favorite 3 Jams", current: favorites.filter(id => spots.find(s=>s.id === id)?.type.includes("Jam")).length, target: 3 },
-  ];
-  
-  el.innerHTML = list.map(ch => {
-      const progress = Math.min(100, (ch.current / ch.target) * 100);
-      return `
-        <div class="challenge-card bg-gray-700 p-3 rounded-lg">
-          <div class="flex justify-between items-center mb-1">
-              <h4 class="text-sm font-medium">${ch.title}</h4>
-              <span class="text-xs text-gray-400">${ch.current}/${ch.target}</span>
-          </div>
-          <div class="w-full bg-gray-800 rounded-full h-2">
-              <div class="h-2 rounded-full" style="width: ${progress}%; background-color: var(--accent);"></div>
-          </div>
-        </div>
-      `;
-  }).join('');
+    collectionEntries.sort(([, a], [, b]) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    collectionEntries.forEach(([id, collection]) => {
+        const card = document.createElement('div');
+        card.className = 'collection-card bg-gray-50 p-4 rounded-xl shadow-md border border-gray-200 space-y-2';
+        card.innerHTML = `
+            <h4 class="text-lg font-semibold truncate" style="color: var(--accent);">${collection.name}</h4>
+            <p class="text-sm text-gray-500">${collection.spotIds.length} Spots</p>
+            <p class="text-xs text-gray-600 line-clamp-2">${collection.description || 'No description provided.'}</p>
+            <div class="flex justify-end space-x-2 mt-3">
+                <button class="text-gray-500 hover:text-gray-900 transition collection-edit-btn" data-id="${id}">
+                    <i data-lucide="pencil" class="w-4 h-4"></i>
+                </button>
+                <button class="text-red-500 hover:text-red-700 transition collection-delete-btn" data-id="${id}">
+                    <i data-lucide="trash-2" class="w-4 h-4"></i>
+                </button>
+            </div>
+        `;
+        container.appendChild(card);
+    });
+    // MODIFICATION: Add event listeners for collection buttons
+    container.querySelectorAll('.collection-edit-btn').forEach(btn => {
+        btn.addEventListener('click', () => showCollectionModal('edit', btn.dataset.id));
+    });
+    container.querySelectorAll('.collection-delete-btn').forEach(btn => {
+        btn.addEventListener('click', () => showDeleteModal(btn.dataset.id));
+    });
+
+    lucide.createIcons();
 }
 
 function renderActivityFeed() {
-  const el = document.getElementById("profileActivity");
-  if (!el) return;
-  el.innerHTML = "";
-  
-  if (activityFeed.length === 0) {
-      el.innerHTML = `<li class="text-gray-400 text-sm p-3 bg-gray-700 rounded-lg">No activity yet.</li>`;
-      return;
-  }
-  
-  activityFeed.slice(0, 20).forEach(a => {
-    const li = document.createElement("li");
-    const d = new Date(a.time);
-    li.className = "p-2 bg-gray-700 rounded-lg";
-    li.innerHTML = `
-        <span class="text-gray-300">${a.text}</span>
-        <span class="block text-xs text-gray-500">${d.toLocaleString()}</span>
-    `;
-    el.appendChild(li);
-  });
-}
+    const container = document.getElementById('profileActivity');
+    const noMessage = document.getElementById('noActivityMessage');
+    container.innerHTML = '';
 
-// === DEMO LOGIN ===
-window.login = () => {
-  const u = document.getElementById("username").value.trim();
-  if (u) {
-    logActivity(`User "${u}" logged in (demo)`);
-    showView("dashboard");
-  } else {
-    // You can add a custom modal here instead of alert
-    console.error("Enter username and password");
-  }
-}
+    if (userActivityFeed.length === 0) {
+        noMessage.classList.remove('hidden');
+        return;
+    }
+    noMessage.classList.add('hidden');
 
-// === STATS CHART ===
-function countType(t) {
-  // Access spots from global scope (defined in data.js)
-  return spots.filter(s => s.type.toLowerCase().includes(t.toLowerCase())).length;
-}
-
-function renderStatsChart(usePie = false) {
-  const canvas = document.getElementById("statsChart");
-  if (!canvas) return;
-  
-  // Make canvas responsive
-  const parent = canvas.parentElement;
-  canvas.width = parent.clientWidth;
-  canvas.height = 280; // Fixed height
-  
-  const ctx = canvas.getContext("2d");
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  const data = [
-    { label: "Jams", value: countType("Jam"), color: "#ff9f1c" },
-    { label: "Cyphers", value: countType("Cypher"), color: "#e71d36" },
-    { label: "Training", value: countType("Training"), color: "#2ec4b6" },
-  ];
-  const total = data.reduce((sum, d) => sum + d.value, 0) || 1;
-  
-  ctx.fillStyle = "#f3f4f6"; // text-gray-100
-  ctx.font = "14px Inter";
-
-  if (!usePie) {
-    // Bar chart
-    const barWidth = Math.max(50, (canvas.width - 80) / data.length * 0.6);
-    const gap = (canvas.width - 80 - (barWidth * data.length)) / (data.length - 1);
-    let x = 40;
-    const maxVal = Math.max(...data.map(d => d.value)) || 1;
-    const scale = 180 / maxVal;
-    data.forEach(d => {
-      const h = d.value * scale;
-      ctx.fillStyle = d.color;
-      ctx.fillRect(x, 220 - h, barWidth, h);
-      ctx.fillStyle = "#f3f4f6";
-      ctx.textAlign = "center";
-      ctx.fillText(`${d.label}`, x + barWidth / 2, 240);
-      ctx.fillText(`(${d.value})`, x + barWidth / 2, 260);
-      x += barWidth + gap;
+    userActivityFeed.forEach(activity => {
+        const item = document.createElement('li');
+        const timeAgo = new Date(activity.timestamp).toLocaleTimeString();
+        item.className = 'p-3 bg-gray-50 rounded-lg text-sm flex justify-between items-center border border-gray-200';
+        item.innerHTML = `
+            <span class="text-gray-700">${activity.message}</span>
+            <span class="text-xs text-gray-500">${timeAgo}</span>
+        `;
+        container.appendChild(item);
     });
-  } else {
-    // Pie chart
-    let start = 0;
-    const cx = canvas.width / 2;
-    const cy = 130;
-    const r = 100;
-    data.forEach(d => {
-      const angle = (d.value / total) * Math.PI * 2;
-      ctx.beginPath();
-      ctx.moveTo(cx, cy);
-      ctx.arc(cx, cy, r, start, start + angle);
-      ctx.closePath();
-      ctx.fillStyle = d.color;
-      ctx.fill();
-      start += angle;
+}
+
+function renderAchievements() {
+    const container = document.getElementById('profileAchievements');
+    container.innerHTML = '';
+    
+    // Define all possible achievements
+    const allAchievements = [
+        { id: 'First Favorite', name: 'First Favorite', desc: 'Favorited your first spot.', icon: 'award' },
+        { id: 'Explorer V', name: 'Explorer V', desc: 'Favorited 5 spots.', icon: 'map-pin' },
+        { id: 'Collection Creator', name: 'Collection Creator', desc: 'Created your first collection.', icon: 'folder-open' },
+    ];
+    
+    allAchievements.forEach(ach => {
+        const achieved = userAchievements.includes(ach.id);
+        const card = document.createElement('div');
+        card.className = `p-3 rounded-lg flex items-center space-x-3 transition duration-300 ${achieved ? 'bg-green-100 border-2 border-green-300' : 'bg-gray-100 border-2 border-gray-200'}`;
+        card.innerHTML = `
+            <i data-lucide="${ach.icon}" class="w-6 h-6 ${achieved ? 'text-green-600' : 'text-gray-400'}"></i>
+            <div>
+                <h4 class="font-semibold text-sm ${achieved ? 'text-gray-900' : 'text-gray-700'}">${ach.name}</h4>
+                <p class="text-xs ${achieved ? 'text-green-700' : 'text-gray-500'}">${ach.desc}</p>
+            </div>
+        `;
+        container.appendChild(card);
     });
-  }
-  
-  // Legend HTML
-  const legend = document.getElementById("chartLegend");
-  if (legend) {
-    legend.innerHTML = data.map(d => `
-        <span class="flex items-center">
-            <span class="w-3 h-3 rounded-full mr-2" style="background-color: ${d.color}"></span>
-            ${d.label}: ${d.value}
-        </span>
-    `).join('');
-  }
+    lucide.createIcons();
+}
+
+
+/* --- STATS CHART LOGIC --- */
+
+// Make global
+// window.toggleChartType = function() {
+// MODIFICATION: Removed window. assignment, added function keyword
+function toggleChartType() {
+    chartType = !chartType;
+    localStorage.setItem("chartType", chartType ? 'pie' : 'bar');
+    document.getElementById('chartToggleLabel').textContent = chartType ? 'Switch to Bar Chart' : 'Switch to Pie Chart';
+    renderChart();
+}
+
+function countType(type) {
+    // Count how many favorited spots are of a given type
+    return userFavorites.filter(spotId => {
+        const spot = spots.find(s => s.id === spotId);
+        return spot && spot.type === type;
+    }).length;
+}
+
+function renderChart() {
+    const canvas = document.getElementById('typeDistributionChart');
+    if (!canvas) return;
+
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height); // Clear canvas
+
+    const usePie = chartType;
+    
+    // Data for the chart
+    const data = [
+        { label: "Jam", value: countType("Jam"), color: "#ff9f1c" },
+        { label: "Cypher", value: countType("Cypher"), color: "#1e88e5" },
+        { label: "Training", value: countType("Training"), color: "#2ec4b6" },
+    ];
+    const total = data.reduce((sum, d) => sum + d.value, 0) || 1;
+
+    // Chart Settings
+    ctx.fillStyle = "#1f2937"; // text-gray-800
+    ctx.font = "14px Inter";
+    
+    if (total === 1) { // Handle case with no favorites
+        ctx.textAlign = "center";
+        ctx.fillText("Favorite spots to see your stats!", canvas.width / 2, canvas.height / 2);
+        return;
+    }
+
+
+    if (!usePie) {
+        // Bar chart
+        const margin = 40;
+        const chartAreaWidth = canvas.width - (2 * margin);
+        const barWidth = Math.max(50, (chartAreaWidth / data.length) * 0.6);
+        const gap = (chartAreaWidth - (barWidth * data.length)) / (data.length - 1);
+        let x = margin;
+        const chartHeight = 180;
+        const maxVal = Math.max(...data.map(d => d.value)) || 1;
+        const scale = chartHeight / maxVal;
+        const yBase = 220; // Y coordinate for the base of the bars
+
+        data.forEach(d => {
+            const h = d.value * scale;
+            
+            // Draw bar
+            ctx.fillStyle = d.color;
+            ctx.fillRect(x, yBase - h, barWidth, h);
+
+            // Draw labels
+            ctx.fillStyle = "#1f2937";
+            ctx.textAlign = "center";
+            ctx.fillText(`${d.label}`, x + barWidth / 2, yBase + 20);
+            ctx.fillText(`(${d.value})`, x + barWidth / 2, yBase + 40);
+            
+            x += barWidth + gap;
+        });
+    } else {
+        // Pie chart
+        let start = 0;
+        const cx = canvas.width / 2;
+        const cy = 130;
+        const r = 100;
+        let legendY = 240;
+
+        data.forEach(d => {
+            if (d.value === 0) return; // Skip slices with zero value
+            
+            const angle = (d.value / total) * Math.PI * 2;
+            
+            // Draw arc
+            ctx.beginPath();
+            ctx.moveTo(cx, cy);
+            ctx.arc(cx, cy, r, start, start + angle);
+            ctx.closePath();
+            ctx.fillStyle = d.color;
+            ctx.fill();
+
+            // Calculate mid-point angle for text placement (simplified legend placement for space)
+            const midAngle = start + angle / 2;
+            const labelX = cx + Math.cos(midAngle) * (r * 0.7);
+            const labelY = cy + Math.sin(midAngle) * (r * 0.7);
+            
+            // Draw legend key
+            ctx.fillStyle = d.color;
+            ctx.fillRect(cx - 120, legendY - 10, 10, 10);
+            
+            // Draw legend text
+            ctx.fillStyle = "#1f2937";
+            ctx.textAlign = "left";
+            const percent = ((d.value / total) * 100).toFixed(0);
+            ctx.fillText(`${d.label}: ${d.value} (${percent}%)`, cx - 105, legendY);
+            legendY += 20;
+
+            start += angle;
+        });
+    }
+}
+
+
+/* --- COMMUNITY VIEWS --- */
+
+// The mock data is used for the community view to give a consistent, full experience.
+
+function renderLeaderboard() {
+    const container = document.getElementById('leaderboard');
+    if (!container) return;
+    container.innerHTML = '';
+    
+    // Sort mock data by favorites count
+    const sortedLeaders = [...mockLeaderboardData].sort((a, b) => b.favoritesCount - a.favoritesCount);
+
+    sortedLeaders.forEach((leader, index) => {
+        const card = document.createElement('div');
+        card.className = 'p-4 bg-white rounded-xl flex items-center justify-between shadow-md border border-gray-200';
+        card.innerHTML = `
+            <div class="flex items-center space-x-3">
+                <span class="text-2xl font-bold" style="color: var(--accent);">${index + 1}.</span>
+                <div class="font-medium">
+                    <p class="text-lg text-gray-900">${leader.username}</p>
+                    <p class="text-sm text-gray-500">Total Favorites</p>
+                </div>
+            </div>
+            <span class="text-2xl font-bold text-gray-900">${leader.favoritesCount}</span>
+        `;
+        container.appendChild(card);
+    });
+}
+
+function renderHallOfFame() {
+    const container = document.getElementById('hallOfFame');
+    if (!container) return;
+    container.innerHTML = '';
+
+    // Sort mock data by total favorites
+    const sortedFame = [...mockHallOfFame].sort((a, b) => b.favorites - a.favorites);
+
+    sortedFame.forEach((fame, index) => {
+        const spot = spots.find(s => s.id === fame.spotId);
+        if (!spot) return;
+
+        const card = document.createElement('div');
+        card.className = 'p-4 bg-white rounded-xl flex items-center justify-between shadow-md border border-gray-200';
+        card.innerHTML = `
+            <div class="flex items-center space-x-3">
+                <span class="text-2xl font-bold" style="color: var(--accent);">${index + 1}.</span>
+                <div class="font-medium">
+                    <p class="text-lg text-gray-900 truncate max-w-[150px]">${spot.name}</p>
+                    <p class="text-sm text-gray-500">${spot.city}</p>
+                </div>
+            </div>
+            <div class="text-right">
+                <span class="text-2xl font-bold text-gray-900">${fame.favorites}</span>
+                <p class="text-sm text-gray-500">Favs</p>
+            </div>
+        `;
+        container.appendChild(card);
+    });
+}
+
+
+/* --- STORY MODE LOGIC --- */
+
+let currentSlide = 0;
+
+function bindStoryModeEvents() {
+    document.getElementById('prevSlide').addEventListener('click', () => changeSlide(-1));
+    document.getElementById('nextSlide').addEventListener('click', () => changeSlide(1));
+    renderStorySlides();
+}
+
+function renderStorySlides() {
+    const slidesContainer = document.getElementById('storySlides');
+    if (!slidesContainer) return;
+    slidesContainer.innerHTML = '';
+
+    storySlidesData.forEach((slide, index) => {
+        const slideEl = document.createElement('div');
+        slideEl.className = 'story-slide p-6 rounded-lg text-center transition-opacity duration-500 ' + 
+                            (index === currentSlide ? 'opacity-100' : 'opacity-0 absolute top-0 w-full');
+        slideEl.style.display = index === currentSlide ? 'block' : 'none'; // Initial display control
+
+        slideEl.innerHTML = `
+            <img src="${slide.image}" alt="${slide.title}" class="w-full h-48 object-cover rounded-lg mb-6 shadow-xl mx-auto border border-gray-200">
+            <h3 class="text-2xl font-bold mb-3 text-gray-900" style="color: var(--accent);">${slide.title}</h3>
+            <p class="text-gray-700 text-lg">${slide.text}</p>
+        `;
+        slidesContainer.appendChild(slideEl);
+    });
+    
+    updateStoryControls();
+}
+
+function changeSlide(direction) {
+    const slides = document.querySelectorAll('.story-slide');
+    if (slides.length === 0) return;
+
+    // Hide current slide
+    slides[currentSlide].style.display = 'none';
+    slides[currentSlide].classList.remove('opacity-100');
+    slides[currentSlide].classList.add('opacity-0');
+
+    currentSlide = (currentSlide + direction + slides.length) % slides.length;
+
+    // Show new slide
+    slides[currentSlide].style.display = 'block';
+    setTimeout(() => {
+        slides[currentSlide].classList.remove('opacity-0');
+        slides[currentSlide].classList.add('opacity-100');
+    }, 10); // Small delay for transition effect
+
+    updateStoryControls();
+}
+
+function updateStoryControls() {
+    const prevBtn = document.getElementById('prevSlide');
+    const nextBtn = document.getElementById('nextSlide');
+    
+    // Disable/Enable buttons based on slide position
+    prevBtn.disabled = currentSlide === 0;
+    nextBtn.disabled = currentSlide === storySlidesData.length - 1;
+
+    // Style disabled buttons
+    prevBtn.classList.toggle('opacity-50', prevBtn.disabled);
+    nextBtn.classList.toggle('opacity-50', nextBtn.disabled);
+}
+
+
+/* --- DOM ready: init map, render cards, bind events --- */
+document.addEventListener("DOMContentLoaded", () => {
+    initTheme();
+    initFirebase(); // Starts the auth/data flow
+    initMap();
+    
+    // Initial content rendering (will be updated by onSnapshot once Firebase loads)
+    renderSpotCards(spots); 
+    renderProfileView(); 
+
+    bindDashboardEvents();
+    bindStoryModeEvents();
+    // MODIFICATION: Call new function to bind all global event listeners
+    bindGlobalEventListeners();
+    
+    // Initial view setup
+    showView('dashboard'); 
+    
+    // Ensure icons are created after everything is initialized
+    lucide.createIcons();
+});
+
+// MODIFICATION: New function to bind all event listeners previously inline
+function bindGlobalEventListeners() {
+    // Nav
+    document.getElementById('menuToggle').addEventListener('click', () => toggleMenu(false));
+    document.querySelectorAll('.nav-trigger').forEach(link => {
+        link.addEventListener('click', (e) => showView(e.currentTarget.dataset.view));
+    });
+    document.querySelectorAll('.mobile-nav-trigger').forEach(link => {
+        link.addEventListener('click', (e) => {
+            showView(e.currentTarget.dataset.view);
+            toggleMenu(true); // Force close
+        });
+    });
+
+    // Profile
+    document.getElementById('toggleChartButton').addEventListener('click', toggleChartType);
+    document.getElementById('createCollectionButton').addEventListener('click', () => showCollectionModal('create'));
+
+    // Modals
+    document.getElementById('closeSpotModal').addEventListener('click', () => closeModal('spotModal'));
+    document.getElementById('closeCollectionModal').addEventListener('click', () => closeModal('collectionModal'));
+    document.getElementById('cancelCollectionModal').addEventListener('click', () => closeModal('collectionModal'));
+    document.getElementById('cancelDeleteModal').addEventListener('click', () => closeModal('deleteModal'));
+    document.getElementById('closeSharePopup').addEventListener('click', closeSharePopup);
 }
