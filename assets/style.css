@@ -1,116 +1,43 @@
-/* Base styling */
-body {
-  font-family: 'Inter', sans-serif;
+:root{
+--bg:#0f1724;
+--card:#0b1220;
+--muted:#9aa4b2;
+--accent:#34d399; /* teal-ish */
+--glass: rgba(255,255,255,0.03);
 }
-
-/* Custom accent color variables for dynamic styling */
-:root {
-  --accent: #ff9f1c; /* Default: Orange */
-  --accent-hover: #ffb24a;
+*{box-sizing:border-box}
+html,body,#app{height:100%;}
+body{
+margin:0;
+font-family:Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+background:linear-gradient(180deg,#071025 0%, #071a2b 100%);
+color:#e6eef6;
 }
-
-/* --- Leaflet Light Mode Overrides --- */
-/* (No filter needed for light mode, default tiles are light) */
-
-.leaflet-popup-content-wrapper, .leaflet-popup-tip {
-    background-color: #ffffff; /* bg-white */
-    color: #1f2937; /* text-gray-800 */
-    border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+.topbar{
+display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid rgba(255,255,255,0.04);
 }
-.leaflet-popup-content {
-    color: #1f2937; /* text-gray-800 */
-}
-.leaflet-popup-close-button {
-    color: #1f2937 !important;
-}
-
-/* --- Custom Utility Classes (Tailwind-friendly but defined here for accent color use) --- */
-
-/* Primary Button (Uses dynamic accent color) */
-.btn-primary {
-  background-color: var(--accent);
-  color: #111827; /* dark text */
-  transition: background-color 0.2s ease;
-  font-weight: 600;
-  border-radius: 8px;
-  padding: 10px 16px;
-  cursor: pointer;
-  border: none;
-}
-.btn-primary:hover {
-  background-color: var(--accent-hover);
-}
-
-/* Secondary Button (Light Gray style) */
-.btn-secondary {
-  background-color: #f3f4f6; /* bg-gray-100 */
-  color: #1f2937; /* text-gray-800 */
-  border: 1px solid #e5e7eb; /* border-gray-200 */
-  transition: background-color 0.2s ease;
-  font-weight: 500;
-  border-radius: 8px;
-  padding: 10px 16px;
-  cursor: pointer;
-}
-.btn-secondary:hover {
-  background-color: #e5e7eb; /* bg-gray-200 */
-}
-
-/* Danger Button (Red) */
-.btn-danger {
-    background-color: #ef4444; /* bg-red-500 */
-    color: white;
-    transition: background-color 0.2s ease;
-    font-weight: 600;
-    border-radius: 8px;
-    padding: 10px 16px;
-    cursor: pointer;
-    border: none;
-}
-.btn-danger:hover {
-    background-color: #dc2626; /* bg-red-600 */
-}
-
-
-/* --- Navigation Styling --- */
-.nav-link {
-    @apply text-gray-600 font-medium hover:text-gray-900 transition duration-200 py-2 px-3 rounded-lg;
-}
-.mobile-nav-link {
-    @apply block text-gray-700 font-medium hover:bg-gray-100 transition duration-200 py-2 px-3 rounded-lg;
-}
-
-/* --- Modal Overlays --- */
-.modal-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background-color: rgba(0, 0, 0, 0.5); /* Dark overlay */
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    z-index: 50; /* Above header */
-}
-
-.modal-content {
-    background: #ffffff; /* bg-white */
-    padding: 24px;
-    border-radius: 12px;
-    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
-    width: 90%;
-    max-height: 90vh;
-    overflow-y: auto;
-    position: relative;
-}
-
-/* --- Utility for Spot Cards --- */
-.spot-card {
-    transition: transform 0.2s, box-shadow 0.2s;
-}
-.spot-card:hover {
-    transform: translateY(-4px);
-    box-shadow: 0 15px 30px rgba(0, 0, 0, 0.1);
+.brand{display:flex;align-items:center;gap:10px}
+.brand img{width:36px;height:36px;object-fit:contain}
+.brand h1{font-size:18px;margin:0}
+.controls{display:flex;gap:8px;align-items:center}
+.controls input, .controls select{background:var(--glass);border:1px solid rgba(255,255,255,0.04);padding:8px;border-radius:8px;color:var(--muted)}
+.controls button{background:transparent;border:1px solid rgba(255,255,255,0.04);padding:8px 10px;border-radius:8px;color:var(--muted);cursor:pointer}
+.main{display:flex;height:calc(100% - 120px)}
+.sidebar{width:360px;min-width:260px;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));padding:10px;overflow:auto}
+.mapPane{flex:1;min-width:250px}
+.break-list{list-style:none;padding:0;margin:0;display:grid;grid-template-columns:1fr;gap:10px}
+.break-item{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));padding:12px;border-radius:10px;border:1px solid rgba(255,255,255,0.03)}
+.break-head{display:flex;justify-content:space-between;align-items:center}
+.break-name{margin:0;font-size:16px}
+.meta{font-size:12px;color:var(--muted)}
+.break-desc{margin:8px 0;color:var(--muted);font-size:13px}
+.break-actions{display:flex;gap:8px}
+.break-actions button{padding:6px 8px;border-radius:8px;background:transparent;border:1px solid rgba(255,255,255,0.03);cursor:pointer}
+.footer{padding:10px;text-align:center;color:var(--muted)}
+.modal{border:0;padding:0}
+.modal-content{background:var(--card);color:inherit;padding:16px;border-radius:8px;display:flex;flex-direction:column;gap:10px}
+.modal-actions{display:flex;gap:8px;justify-content:flex-end}
+@media (max-width:900px){
+.sidebar{width:100%;min-width:unset;position:absolute;z-index:30;height:50%;bottom:0;left:0;right:0}
+.main{flex-direction:column}
 }

@@ -1,307 +1,104 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>BreakAtlas 2.0</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>BreakAtlas — Improved</title>
+<meta name="description" content="BreakAtlas — surf break atlas with improved UI, search, map and profile" />
 
-  <!-- Tailwind CSS (CDN) -->
-  <script src="https://cdn.tailwindcss.com"></script>
 
-  <!-- Leaflet Maps CSS -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  
-  <!-- Google Fonts (Inter) -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<!-- Leaflet for map -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-sA+e2w3jGg4QvY4v0k6p6jJbH+P3pQpM1w3s9gkz3H0=" crossorigin="" />
 
-  <!-- Lucide Icons -->
-  <script src="https://unpkg.com/lucide@latest"></script>
 
-  <!-- Local Stylesheet for custom variables and Leaflet overrides -->
-  <link rel="stylesheet" href="style.css">
+<!-- Simple CSS reset + custom styles -->
+<link rel="stylesheet" href="styles.css" />
+
+
 </head>
-<body class="bg-gray-50 text-gray-900 font-inter min-h-screen">
-
-  <!-- Header and navigation -->
-  <header class="bg-white shadow-md sticky top-0 z-50">
-    <nav class="container mx-auto px-4 py-3 flex justify-between items-center">
-      <h1 class="text-2xl font-bold" style="color: var(--accent);">BreakAtlas 2.0</h1>
-      
-      <!-- User ID Display (Mandatory for multi-user apps) -->
-      <div id="authStatus" class="text-sm text-gray-500">
-        <span id="userIdDisplay" class="truncate max-w-xs block">
-            Authenticating...
-        </span>
-      </div>
-
-      <!-- Desktop/Mobile Menu Toggle -->
-      <button id="menuToggle" class="md:hidden text-2xl p-2 rounded-lg hover:bg-gray-100 transition">
-        <i data-lucide="menu" class="w-6 h-6"></i>
-      </button>
-
-      <!-- Navigation Links -->
-      <ul id="navLinks" class="hidden md:flex space-x-6 items-center">
-        <li><a href="javascript:void(0)" data-view="dashboard" class="nav-link nav-trigger">Dashboard</a></li>
-        <li><a href="javascript:void(0)" data-view="profile" class="nav-link nav-trigger">Profile</a></li>
-        <li><a href="javascript:void(0)" data-view="leaderboardView" class="nav-link nav-trigger">Community</a></li>
-        <li><a href="javascript:void(0)" data-view="storyMode" class="nav-link nav-trigger">Story Mode</a></li>
-        <li>
-          <div class="flex items-center space-x-2">
-            <input type="color" id="themeColorPicker" class="w-8 h-8 rounded-full border-2 border-gray-200 cursor-pointer p-0.5">
-          </div>
-        </li>
-      </ul>
-    </nav>
-
-    <!-- Mobile Navigation Drawer -->
-    <div id="mobileMenu" class="md:hidden hidden bg-white shadow-lg absolute w-full z-40 border-t border-gray-200">
-      <ul class="flex flex-col p-4 space-y-2">
-        <li><a href="javascript:void(0)" data-view="dashboard" class="mobile-nav-link mobile-nav-trigger">Dashboard</a></li>
-        <li><a href="javascript:void(0)" data-view="profile" class="mobile-nav-link mobile-nav-trigger">Profile</a></li>
-        <li><a href="javascript:void(0)" data-view="leaderboardView" class="mobile-nav-link mobile-nav-trigger">Community</a></li>
-        <li><a href="javascript:void(0)" data-view="storyMode" class="mobile-nav-link mobile-nav-trigger">Story Mode</a></li>
-        <li class="flex items-center justify-between pt-2 border-t border-gray-200">
-          <span class="text-gray-700">Accent Color:</span>
-          <input type="color" id="mobileThemeColorPicker" class="w-8 h-8 rounded-full border-2 border-gray-300 cursor-pointer p-0.5">
-        </li>
-      </ul>
-    </div>
-  </header>
-
-  <main class="container mx-auto px-4 py-8">
-    
-    <!-- DASHBOARD VIEW -->
-    <section id="dashboard" class="view">
-      <h2 class="text-3xl font-semibold text-gray-900 mb-6">Explore the Scene</h2>
-      
-      <!-- Map Section -->
-      <div class="bg-white rounded-xl shadow-lg overflow-hidden mb-8 h-64 md:h-96 border border-gray-200">
-        <div id="map" class="h-full w-full"></div>
-      </div>
-
-      <!-- Search and Filter Controls -->
-      <div class="flex flex-col md:flex-row gap-4 mb-8">
-        <input type="text" id="spotSearch" placeholder="Search spots, cities, or crews..." class="flex-grow p-3 bg-white border border-gray-300 rounded-xl focus:ring-accent focus:border-accent">
-        <select id="spotFilter" class="p-3 bg-white border border-gray-300 rounded-xl focus:ring-accent focus:border-accent">
-          <option value="all">All Types</option>
-          <option value="Jam">Jams</option>
-          <option value="Cypher">Cyphers</option>
-          <option value="Training">Training Spots</option>
-        </select>
-      </div>
-
-      <!-- Spot Cards Grid -->
-      <div id="spotGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-        <!-- Spot cards will be rendered here by app.js -->
-      </div>
-    </section>
-
-    <!-- PROFILE VIEW -->
-    <section id="profile" class="view" style="display:none;">
-      <h2 class="text-3xl font-semibold text-gray-900 mb-6">My Breaking Journey</h2>
-      
-      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
-        <!-- Left Column: Stats and Activity -->
-        <div class="lg:col-span-2 space-y-6">
-          
-          <!-- Quick Stats & Chart -->
-          <div class="bg-white p-6 rounded-xl shadow-lg border border-gray-200">
-            <h3 class="text-xl font-semibold mb-4 flex justify-between items-center text-gray-900">
-              Stats Snapshot
-              <button id="toggleChartButton" class="text-sm text-accent hover:underline">
-                <i data-lucide="bar-chart-3" class="w-4 h-4 inline-block align-text-bottom"></i>
-                <span id="chartToggleLabel">Switch to Pie Chart</span>
-              </button>
-            </h3>
-            <canvas id="typeDistributionChart" width="400" height="280"></canvas>
-          </div>
-
-          <!-- Activity Feed -->
-          <div class="bg-white p-6 rounded-xl shadow-lg border border-gray-200">
-            <h3 class="text-xl font-semibold text-gray-900 mb-4">Activity Feed</h3>
-            <ul id="profileActivity" class="space-y-3">
-              <!-- Activities rendered here -->
-            </ul>
-            <p id="noActivityMessage" class="text-gray-500 italic hidden">No recent activity yet. Go favorite a spot!</p>
-          </div>
-
-        </div>
-
-        <!-- Right Column: Collections and Achievements -->
-        <div class="space-y-6">
-          
-          <!-- Collections -->
-          <div class="bg-white p-6 rounded-xl shadow-lg border border-gray-200">
-            <h3 class="text-xl font-semibold text-gray-900 mb-4 flex justify-between items-center">
-              My Collections
-              <button id="createCollectionButton" class="btn-primary flex items-center space-x-1 py-1.5 px-3 text-sm">
-                <i data-lucide="plus-circle" class="w-4 h-4"></i> <span>New</span>
-              </button>
-            </h3>
-            <div id="profileCollections" class="space-y-3">
-              <!-- Collections rendered here -->
-            </div>
-            <p id="noCollectionsMessage" class="text-gray-500 italic hidden">You haven't created any collections.</p>
-          </div>
-
-          <!-- Achievements -->
-          <div class="bg-white p-6 rounded-xl shadow-lg border border-gray-200">
-            <h3 class="text-xl font-semibold text-gray-900 mb-4">Achievements</h3>
-            <div id="profileAchievements" class="grid grid-cols-2 gap-3">
-              <!-- Achievements rendered here -->
-            </div>
-          </div>
-        </div>
-
-      </div>
-
-    </section>
-
-    <!-- COMMUNITY VIEW (Leaderboard + Hall of Fame) -->
-    <section id="leaderboardView" class="view" style="display:none;">
-      <h2 class="text-3xl font-semibold text-gray-900 mb-6">Global Community</h2>
-      
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        
-        <!-- Leaderboard -->
-        <div class="bg-white p-6 rounded-xl shadow-lg border border-gray-200">
-          <h3 class="text-xl font-semibold text-gray-900 mb-4">Top Favoriters (Leaderboard)</h3>
-          <div id="leaderboard" class="space-y-3">
-            <!-- Leaderboard items rendered here -->
-          </div>
-        </div>
-
-        <!-- Hall of Fame -->
-        <div class="bg-white p-6 rounded-xl shadow-lg border border-gray-200">
-          <h3 class="text-xl font-semibold text-gray-900 mb-4">Top Spots (Hall of Fame)</h3>
-          <div id="hallOfFame" class="space-y-3">
-            <!-- Hall of Fame items rendered here -->
-          </div>
-        </div>
-
-      </div>
-      
-    </section>
-
-    <!-- STORY MODE VIEW -->
-    <section id="storyMode" class="view" style="display:none;">
-      <div class="max-w-4xl mx-auto bg-white p-6 md:p-10 rounded-xl shadow-2xl border border-gray-200 space-y-6">
-        <h2 class="text-3xl font-semibold text-center text-gray-900 mb-4" style="color: var(--accent);">Story Mode: Your Guide</h2>
-        <div id="storySlides" class="relative">
-          <!-- Slides rendered here -->
-        </div>
-        <div class="flex justify-between mt-6">
-          <button id="prevSlide" class="btn-secondary flex items-center space-x-2">
-            <i data-lucide="chevron-left" class="w-5 h-5"></i> <span>Previous</span>
-          </button>
-          <button id="nextSlide" class="btn-primary flex items-center space-x-2">
-            <span>Next</span> <i data-lucide="chevron-right" class="w-5 h-5"></i>
-          </button>
-        </div>
-      </div>
-    </section>
-
-  </main>
-
-  <!-- === MODALS === -->
-
-  <!-- 1. Spot Details Modal -->
-  <div id="spotModal" class="modal-overlay hidden">
-    <div class="modal-content max-w-lg">
-      <div class="flex justify-between items-start mb-4">
-        <h3 id="spotModalTitle" class="text-2xl font-bold text-accent">Spot Name</h3>
-        <button id="closeSpotModal" class="text-gray-400 hover:text-gray-900 transition">
-          <i data-lucide="x" class="w-6 h-6"></i>
-        </button>
-      </div>
-      <img id="spotModalImage" class="w-full h-40 object-cover rounded-xl mb-4" src="" alt="Spot Image">
-      <div class="space-y-4 text-gray-700">
-        <p id="spotModalDetails" class="text-lg"></p>
-        <p><strong class="text-gray-900">Type:</strong> <span id="spotModalType"></span></p>
-        <p><strong class="text-gray-900">Crew:</strong> <span id="spotModalCrew"></span></p>
-        <h4 class="text-xl font-semibold text-gray-900 mt-4">Reviews</h4>
-        <ul id="spotModalReviews" class="space-y-2">
-          <!-- Reviews rendered here -->
-        </ul>
-      </div>
-      <div class="flex flex-col sm:flex-row justify-end space-y-2 sm:space-y-0 sm:space-x-3 mt-6">
-        <button id="spotModalFavoriteBtn" class="btn-secondary flex items-center justify-center space-x-2" data-spot-id="">
-          <i data-lucide="heart" class="w-5 h-5"></i> <span>Favorite</span>
-        </button>
-        <button id="spotModalShareBtn" class="btn-primary flex items-center justify-center space-x-2" data-spot-id="">
-          <i data-lucide="share-2" class="w-5 h-5"></i> <span>Share</span>
-        </button>
-      </div>
-      <div id="collectionAddSection" class="mt-4 p-4 bg-gray-100 rounded-lg">
-          <h4 class="font-semibold text-gray-900 mb-2">Add to Collection</h4>
-          <div id="collectionAddButtons" class="flex flex-wrap gap-2">
-              <!-- Collection buttons rendered here -->
-          </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- 2. Create/Edit Collection Modal -->
-  <div id="collectionModal" class="modal-overlay hidden">
-    <div class="modal-content max-w-md">
-      <div class="flex justify-between items-start mb-4">
-        <h3 id="collectionModalTitle" class="text-2xl font-bold" style="color: var(--accent);">Collection Title</h3>
-        <button id="closeCollectionModal" class="text-gray-400 hover:text-gray-900 transition">
-          <i data-lucide="x" class="w-6 h-6"></i>
-        </button>
-      </div>
-      <input type="text" id="collectionNameInput" placeholder="Collection Name (e.g., 'Best Jams 2024')" class="w-full p-3 bg-white border border-gray-300 rounded-xl mb-4 focus:ring-accent focus:border-accent">
-      <textarea id="collectionDescriptionInput" placeholder="Optional: Describe your collection" rows="3" class="w-full p-3 bg-white border border-gray-300 rounded-xl mb-6 focus:ring-accent focus:border-accent"></textarea>
-      <div class="flex justify-end space-x-3">
-        <button id="cancelCollectionModal" class="btn-secondary">Cancel</button>
-        <button id="collectionModalConfirmBtn" class="btn-primary">Save Collection</button>
-      </div>
-      <input type="hidden" id="collectionIdInput">
-    </div>
-  </div>
-
-  <!-- 3. Delete Confirmation Modal -->
-  <div id="deleteModal" class="modal-overlay hidden">
-    <div class="modal-content max-w-sm">
-      <div class="flex items-center space-x-3 mb-4">
-        <div class="p-2 bg-red-100 rounded-full">
-            <i data-lucide="alert-triangle" class="w-6 h-6 text-red-600"></i>
-        </div>
-        <h3 class="text-xl font-semibold text-red-600">Confirm Deletion</h3>
-      </div>
-      <p class="text-gray-700 my-4">Are you sure you want to delete the collection "<strong id="deleteModalCollectionName" class="text-gray-900"></strong>"? This action cannot be undone.</p>
-      <div class="flex justify-end space-x-2 mt-6">
-        <button id="cancelDeleteModal" class="btn-secondary">Cancel</button>
-        <button id="deleteModalConfirmBtn" class="btn-danger">Delete</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- 4. Share Popup (Fallback) -->
-  <div id="sharePopup" class="fixed bottom-6 right-6 bg-white p-4 rounded-lg shadow-2xl z-40 space-y-3 border border-gray-200 hidden">
-    <h4 class="font-semibold text-lg text-gray-900">Share this spot</h4>
-    <div id="sharePopupLinks" class="flex flex-col space-y-2"></div>
-    <button id="closeSharePopup" class="btn-secondary w-full mt-2">Close</button>
-  </div>
+<body>
+<div id="app">
+<header class="topbar">
+<div class="brand">
+<img src="https://raw.githubusercontent.com/hhdc-paris/BreakAtlas/main/assets/logo.png" alt="BreakAtlas" onerror="this.style.display='none'" />
+<h1>BreakAtlas</h1>
+</div>
 
 
-  <!-- External Scripts -->
-  <!-- Leaflet Maps JS -->
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <!-- Data (Spots, Crews, Story) -->
-  <script src="data.js"></script>
-  <!-- Main Application Logic -->
-  <script type="module" src="app.js"></script>
+<div class="controls">
+<input id="searchInput" type="search" placeholder="Search breaks, countries, tags..." aria-label="Search breaks" />
 
-  <!-- Lucide Icon Initialization -->
-  <script>
-    // This script ensures all lucide icons are rendered after the DOM loads
-    document.addEventListener('DOMContentLoaded', () => {
-      lucide.createIcons();
-    });
-  </script>
-</body>
+
+<select id="filterRegion" aria-label="Filter region">
+<option value="">All regions</option>
+<option value="Europe">Europe</option>
+<option value="Africa">Africa</option>
+<option value="Americas">Americas</option>
+<option value="Asia">Asia</option>
+<option value="Oceania">Oceania</option>
+</select>
+
+
+<select id="sortSelect" aria-label="Sort by">
+<option value="name">Sort: Name</option>
+<option value="rating">Sort: Rating</option>
+<option value="popularity">Sort: Popularity</option>
+</select>
+
+
+<button id="toggleMapBtn" title="Toggle map/list">Map</button>
+<button id="profileBtn" title="Open profile">Profile</button>
+</div>
+</header>
+
+
+<main class="main">
+<aside class="sidebar" id="listPane" aria-label="Break list">
+<div class="list-actions">
+<button id="showFavorites">Favorites</button>
+<button id="exportBtn">Export JSON</button>
+<button id="importBtn">Import JSON</button>
+<input id="fileInput" type="file" accept="application/json" style="display:none" />
+</div>
+
+
+<ul id="breakList" class="break-list" role="list"></ul>
+</aside>
+
+
+<section class="mapPane" id="mapPane">
+<div id="map" style="height:100%; width:100%"></div>
+</section>
+</main>
+
+
+<footer class="footer">
+<small>Made with ❤ — Improved UI, search, filters, map, user profiles and offline features.</small>
+</footer>
+
+
+<!-- Profile modal -->
+<dialog id="profileModal" class="modal">
+<form method="dialog" class="modal-content" id="profileForm">
+<h2>User profile</h2>
+<label>Display name<br/><input id="profileName" type="text" maxlength="40" /></label>
+<label>Email (optional)<br/><input id="profileEmail" type="email" /></label>
+<label>Preferred region<br/>
+<select id="profileRegion">
+<option value="">All</option>
+<option>Europe</option>
+<option>Americas</option>
+<option>Africa</option>
+<option>Asia</option>
+<option>Oceania</option>
+</select>
+</label>
+
+
+<div class="modal-actions">
+<button id="saveProfile" type="button">Save</button>
+<button id="closeProfile" type="button">Close</button>
+<button id="resetProfile" type="button">Reset</button>
+</div>
+</form>
 </html>
